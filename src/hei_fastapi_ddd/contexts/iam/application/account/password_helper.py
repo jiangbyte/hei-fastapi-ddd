@@ -10,13 +10,18 @@ from datetime import UTC, datetime
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from hei_fastapi_ddd.contexts.iam.infrastructure.persistence.account_po import SysAccount
+from hei_fastapi_ddd.contexts.iam.infrastructure.persistence.password_history_po import (
+    SysAccountPasswordHistory,
+)
 from hei_fastapi_ddd.shared.config.settings import settings
 from hei_fastapi_ddd.shared.exceptions.business import BusinessError
 from hei_fastapi_ddd.shared.id_generator.snowflake import generate_snowflake_id
 from hei_fastapi_ddd.shared.security.password import hash_password_async, verify_password_async
-from hei_fastapi_ddd.shared.security.password_policy import is_weak_password, validate_password_strength
-from hei_fastapi_ddd.contexts.iam.infrastructure.persistence.account_po import SysAccount
-from hei_fastapi_ddd.contexts.iam.infrastructure.persistence.password_history_po import SysAccountPasswordHistory
+from hei_fastapi_ddd.shared.security.password_policy import (
+    is_weak_password,
+    validate_password_strength,
+)
 
 
 def _parse_dt(value) -> datetime | None:
@@ -78,7 +83,9 @@ async def validate_and_record_password(
         resolved_phone = phone
         resolved_name = account_name
         if resolved_email is None or resolved_phone is None or resolved_name is None:
-            from hei_fastapi_ddd.contexts.iam.infrastructure.persistence.account_repository import AccountRepository
+            from hei_fastapi_ddd.contexts.iam.infrastructure.persistence.account_repository import (
+                AccountRepository,
+            )
 
             identities = await AccountRepository(db).list_identities_by_account_ids([account_id])
             for item in identities:

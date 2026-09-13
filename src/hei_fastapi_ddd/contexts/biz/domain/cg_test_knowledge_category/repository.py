@@ -7,7 +7,9 @@ from __future__ import annotations
 
 from typing import Protocol
 
-from hei_fastapi_ddd.contexts.biz.domain.cg_test_knowledge_category.aggregate import CgTestKnowledgeCategory
+from hei_fastapi_ddd.contexts.biz.domain.cg_test_knowledge_category.aggregate import (
+    CgTestKnowledgeCategory,
+)
 
 
 class CgTestKnowledgeCategoryRepository(Protocol):

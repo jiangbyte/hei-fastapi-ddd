@@ -8,11 +8,7 @@ from typing import Annotated
 from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from hei_fastapi_ddd.shared.config.enums import AccountType
-from hei_fastapi_ddd.shared.web.pagination import PageData
-from hei_fastapi_ddd.shared.web.schema import ApiResponse, success
-from hei_fastapi_ddd.shared.deps.auth import require_account_type, require_permission
-from hei_fastapi_ddd.shared.deps.db import get_db_session
+from hei_fastapi_ddd.contexts.sys.application.dict.dict_application_service import DictService
 from hei_fastapi_ddd.contexts.sys.interfaces.http.dict_schemas import (
     DictAdminPageQuery,
     DictCreateRequest,
@@ -23,7 +19,11 @@ from hei_fastapi_ddd.contexts.sys.interfaces.http.dict_schemas import (
     SysDictSchema,
     SysDictTreeNode,
 )
-from hei_fastapi_ddd.contexts.sys.application.dict.dict_application_service import DictService
+from hei_fastapi_ddd.shared.config.enums import AccountType
+from hei_fastapi_ddd.shared.deps.auth import require_account_type, require_permission
+from hei_fastapi_ddd.shared.deps.db import get_db_session
+from hei_fastapi_ddd.shared.web.pagination import PageData
+from hei_fastapi_ddd.shared.web.schema import ApiResponse, success
 
 router = APIRouter()
 

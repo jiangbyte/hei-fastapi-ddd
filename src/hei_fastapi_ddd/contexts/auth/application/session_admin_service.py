@@ -9,10 +9,6 @@ from time import monotonic
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from hei_fastapi_ddd.shared.audit import snapshots as audit_snapshots
-from hei_fastapi_ddd.shared.config.enums import AccountType
-from hei_fastapi_ddd.shared.web.pagination import PageData, build_page
-from hei_fastapi_ddd.shared.security.session import SessionPayload, session_store
 from hei_fastapi_ddd.contexts.auth.interfaces.http.session_schemas import (
     SessionAccountItem,
     SessionAnalysisResponse,
@@ -21,7 +17,13 @@ from hei_fastapi_ddd.contexts.auth.interfaces.http.session_schemas import (
     SessionTokensQuery,
 )
 from hei_fastapi_ddd.contexts.iam.application.account.query_service import AccountQueryService
-from hei_fastapi_ddd.contexts.iam.application.api.account_api_adapter import AccountApiAdapter as AccountRepository
+from hei_fastapi_ddd.contexts.iam.application.api.account_api_adapter import (
+    AccountApiAdapter as AccountRepository,
+)
+from hei_fastapi_ddd.shared.audit import snapshots as audit_snapshots
+from hei_fastapi_ddd.shared.config.enums import AccountType
+from hei_fastapi_ddd.shared.security.session import SessionPayload, session_store
+from hei_fastapi_ddd.shared.web.pagination import PageData, build_page
 
 _ANALYSIS_CACHE_TTL_SECONDS = 30.0
 _analysis_cache: tuple[float, SessionAnalysisResponse] | None = None

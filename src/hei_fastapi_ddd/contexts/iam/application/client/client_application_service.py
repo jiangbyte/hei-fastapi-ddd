@@ -6,15 +6,21 @@
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from hei_fastapi_ddd.shared.audit import snapshots as audit_snapshots
-from hei_fastapi_ddd.shared.config.enums import AccountType
-from hei_fastapi_ddd.shared.persistence.transaction import transactional
-from hei_fastapi_ddd.shared.web.pagination import PageData, build_page
-from hei_fastapi_ddd.shared.schema.base import IdQuery, IdsRequest, to_schema, to_schema_list
-from hei_fastapi_ddd.shared.security.permission_registry import ensure_registered_permission_key
-from hei_fastapi_ddd.shared.security.session import SessionPayload
-from hei_fastapi_ddd.contexts.iam.infrastructure.persistence.client_po import SysClientModule, SysClientResource
-from hei_fastapi_ddd.contexts.iam.infrastructure.persistence.client_repository import ClientModuleRepository, ClientResourceRepository
+from hei_fastapi_ddd.contexts.iam.application.support import audit as iam_audit
+from hei_fastapi_ddd.contexts.iam.domain.enums import (
+    IamRelationSubjectType,
+    IamRelationTargetType,
+    IamRelationType,
+)
+from hei_fastapi_ddd.contexts.iam.infrastructure.persistence.client_po import (
+    SysClientModule,
+    SysClientResource,
+)
+from hei_fastapi_ddd.contexts.iam.infrastructure.persistence.client_repository import (
+    ClientModuleRepository,
+    ClientResourceRepository,
+)
+from hei_fastapi_ddd.contexts.iam.infrastructure.persistence.relation_po import SysIamRelation
 from hei_fastapi_ddd.contexts.iam.interfaces.http.client_schemas import (
     ClientModuleAdminPageQuery,
     ClientModuleCreateRequest,
@@ -30,14 +36,14 @@ from hei_fastapi_ddd.contexts.iam.interfaces.http.client_schemas import (
     SysClientResourcePermissionRelSchema,
     SysClientResourceSchema,
 )
-from hei_fastapi_ddd.contexts.iam.domain.enums import (
-    IamRelationSubjectType,
-    IamRelationTargetType,
-    IamRelationType,
-)
-from hei_fastapi_ddd.contexts.iam.infrastructure.persistence.relation_po import SysIamRelation
 from hei_fastapi_ddd.contexts.iam.interfaces.http.iam_schemas import ResourceGrantModuleOption
-from hei_fastapi_ddd.contexts.iam.application.support import audit as iam_audit
+from hei_fastapi_ddd.shared.audit import snapshots as audit_snapshots
+from hei_fastapi_ddd.shared.config.enums import AccountType
+from hei_fastapi_ddd.shared.persistence.transaction import transactional
+from hei_fastapi_ddd.shared.schema.base import IdQuery, IdsRequest, to_schema, to_schema_list
+from hei_fastapi_ddd.shared.security.permission_registry import ensure_registered_permission_key
+from hei_fastapi_ddd.shared.security.session import SessionPayload
+from hei_fastapi_ddd.shared.web.pagination import PageData, build_page
 
 
 class ClientModuleService:

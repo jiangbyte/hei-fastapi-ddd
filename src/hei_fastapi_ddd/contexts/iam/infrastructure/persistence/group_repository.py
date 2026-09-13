@@ -8,10 +8,23 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import aliased
 from sqlalchemy.sql.elements import ColumnElement
 
-from hei_fastapi_ddd.shared.exceptions.business import NotFoundError
+from hei_fastapi_ddd.contexts.iam.application.reference_guard import (
+    count_group_references,
+    raise_if_referenced,
+)
+from hei_fastapi_ddd.contexts.iam.domain.enums import (
+    IamRelationSubjectType,
+    IamRelationTargetType,
+    IamRelationType,
+)
 from hei_fastapi_ddd.contexts.iam.infrastructure.persistence.account_po import SysAccount
-from hei_fastapi_ddd.contexts.iam.domain.enums import IamRelationSubjectType, IamRelationTargetType, IamRelationType
 from hei_fastapi_ddd.contexts.iam.infrastructure.persistence.group_po import SysGroup
+from hei_fastapi_ddd.contexts.iam.infrastructure.persistence.relation_po import SysIamRelation
+from hei_fastapi_ddd.contexts.iam.infrastructure.persistence.relation_repository import (
+    IamRelationRepository,
+    account_dept_condition,
+)
+from hei_fastapi_ddd.contexts.iam.infrastructure.persistence.role_po import SysRole
 from hei_fastapi_ddd.contexts.iam.interfaces.http.group_schemas import (
     GroupAdminPageQuery,
     GroupCreateRequest,
@@ -20,10 +33,7 @@ from hei_fastapi_ddd.contexts.iam.interfaces.http.group_schemas import (
     GroupRoleAssignRequest,
     GroupUpdateRequest,
 )
-from hei_fastapi_ddd.contexts.iam.application.reference_guard import count_group_references, raise_if_referenced
-from hei_fastapi_ddd.contexts.iam.infrastructure.persistence.relation_po import SysIamRelation
-from hei_fastapi_ddd.contexts.iam.infrastructure.persistence.relation_repository import IamRelationRepository, account_dept_condition
-from hei_fastapi_ddd.contexts.iam.infrastructure.persistence.role_po import SysRole
+from hei_fastapi_ddd.shared.exceptions.business import NotFoundError
 
 
 class GroupRepository:

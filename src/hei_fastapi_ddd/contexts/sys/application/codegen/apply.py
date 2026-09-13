@@ -10,6 +10,8 @@ from pathlib import Path
 
 from hei_fastapi_ddd.contexts.sys.application.codegen.paths import frontend_api_index_rel
 from hei_fastapi_ddd.contexts.sys.interfaces.http.codegen_schemas import CodegenPreviewFile
+
+
 def api_index_rel() -> Path:
     """hei-admin src/api/index.ts 相对 fastapi 项目根的路径。"""
     return frontend_api_index_rel()

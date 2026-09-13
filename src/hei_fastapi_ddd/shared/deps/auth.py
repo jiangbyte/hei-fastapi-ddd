@@ -9,14 +9,17 @@ from fastapi import Depends, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from hei_fastapi_ddd.shared.config.enums import AccountStatusEnum, AccountType
+from hei_fastapi_ddd.shared.deps.db import get_db_session
 from hei_fastapi_ddd.shared.exceptions.business import AuthenticationError, AuthorizationError
 from hei_fastapi_ddd.shared.observability.context import account_id_ctx, account_type_ctx
 from hei_fastapi_ddd.shared.security.account_type import assert_account_type_allowed
 from hei_fastapi_ddd.shared.security.permission import PermissionChecker
-from hei_fastapi_ddd.shared.security.permission_registry import ACCOUNT_TYPE_META_ATTR, PERMISSION_META_ATTR
+from hei_fastapi_ddd.shared.security.permission_registry import (
+    ACCOUNT_TYPE_META_ATTR,
+    PERMISSION_META_ATTR,
+)
 from hei_fastapi_ddd.shared.security.session import SessionPayload
 from hei_fastapi_ddd.shared.security.session_auth import resolve_request_session
-from hei_fastapi_ddd.shared.deps.db import get_db_session
 
 
 async def get_current_session(request: Request) -> SessionPayload:
@@ -41,7 +44,9 @@ async def get_current_account(
     """解析并校验当前账户，同时写入账户上下文。"""
     account_id_ctx.set(session.account_id)
     account_type_ctx.set(session.account_type)
-    from hei_fastapi_ddd.contexts.iam.infrastructure.persistence.account_repository import AccountRepository
+    from hei_fastapi_ddd.contexts.iam.infrastructure.persistence.account_repository import (
+        AccountRepository,
+    )
 
     account = await AccountRepository(db).get_account_by_id(session.account_id)
     if (

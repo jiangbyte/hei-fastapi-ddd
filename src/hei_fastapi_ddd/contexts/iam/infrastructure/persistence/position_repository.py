@@ -7,13 +7,13 @@ from sqlalchemy import Select, delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.sql.elements import ColumnElement
 
-from hei_fastapi_ddd.shared.exceptions.business import NotFoundError
 from hei_fastapi_ddd.contexts.iam.infrastructure.persistence.position_po import SysPosition
 from hei_fastapi_ddd.contexts.iam.interfaces.http.position_schemas import (
     PositionAdminPageQuery,
     PositionCreateRequest,
     PositionUpdateRequest,
 )
+from hei_fastapi_ddd.shared.exceptions.business import NotFoundError
 
 
 class PositionRepository:

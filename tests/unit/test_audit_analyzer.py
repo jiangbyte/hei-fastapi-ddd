@@ -11,9 +11,9 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from hei_fastapi_ddd.shared.config.settings import settings
 from hei_fastapi_ddd.contexts.sys.application.audit import analyzer as analyzer_mod
 from hei_fastapi_ddd.contexts.sys.application.audit.analyzer import AuditAnalyzer
+from hei_fastapi_ddd.shared.config.settings import settings
 
 
 @pytest.fixture

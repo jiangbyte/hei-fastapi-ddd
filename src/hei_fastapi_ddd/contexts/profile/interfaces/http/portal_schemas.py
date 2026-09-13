@@ -7,10 +7,10 @@ from datetime import datetime
 
 from pydantic import Field
 
+from hei_fastapi_ddd.contexts.auth.interfaces.http.auth_schemas import OptionalStr
 from hei_fastapi_ddd.shared.schema.base import ApiSchema
 from hei_fastapi_ddd.shared.schema.wire import WireBool
 from hei_fastapi_ddd.shared.security.transport import PasswordKeyMixin
-from hei_fastapi_ddd.contexts.auth.interfaces.http.auth_schemas import OptionalStr
 
 
 class ProfileUserPortalResponse(ApiSchema):

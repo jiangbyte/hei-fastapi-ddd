@@ -8,7 +8,10 @@ import structlog
 
 from hei_fastapi_ddd.shared.config.settings import settings
 from hei_fastapi_ddd.shared.logger.setup import setup_logging
-from hei_fastapi_ddd.shared.observability.context import bind_request_log_context, clear_request_log_context
+from hei_fastapi_ddd.shared.observability.context import (
+    bind_request_log_context,
+    clear_request_log_context,
+)
 
 
 def _configure_json_logging(monkeypatch) -> io.StringIO:

@@ -9,21 +9,21 @@ from fastapi import APIRouter, Depends, File, Query, UploadFile
 from fastapi.responses import Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from hei_fastapi_ddd.shared.config.enums import AccountType, StorageProvider
-from hei_fastapi_ddd.shared.config.settings import settings
-from hei_fastapi_ddd.shared.web.schema import ApiResponse, success
-from hei_fastapi_ddd.shared.schema.base import IdQuery, IdsRequest
-from hei_fastapi_ddd.shared.security.session import SessionPayload
-from hei_fastapi_ddd.shared.storage.url import normalize_object_name
-from hei_fastapi_ddd.shared.deps.auth import get_current_session, require_account_type
-from hei_fastapi_ddd.shared.deps.db import get_db_session
+from hei_fastapi_ddd.contexts.sys.application.file.file_application_service import FileService
 from hei_fastapi_ddd.contexts.sys.interfaces.http.file_schemas import (
     FileUploadRequest,
     FileUrlRequest,
     FileUrlResponse,
     SysFileSchema,
 )
-from hei_fastapi_ddd.contexts.sys.application.file.file_application_service import FileService
+from hei_fastapi_ddd.shared.config.enums import AccountType, StorageProvider
+from hei_fastapi_ddd.shared.config.settings import settings
+from hei_fastapi_ddd.shared.deps.auth import get_current_session, require_account_type
+from hei_fastapi_ddd.shared.deps.db import get_db_session
+from hei_fastapi_ddd.shared.schema.base import IdQuery, IdsRequest
+from hei_fastapi_ddd.shared.security.session import SessionPayload
+from hei_fastapi_ddd.shared.storage.url import normalize_object_name
+from hei_fastapi_ddd.shared.web.schema import ApiResponse, success
 
 router = APIRouter()
 # 公开端接口统一要求 PORTAL 账户登录。

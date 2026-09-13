@@ -9,15 +9,9 @@ from fastapi import APIRouter, Depends
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from hei_fastapi_ddd.shared.audit import snapshots as audit_snapshots
-from hei_fastapi_ddd.shared.config.enums import AccountType
-from hei_fastapi_ddd.shared.persistence.models.sys_weak_password import SysWeakPassword
-from hei_fastapi_ddd.shared.web.pagination import PageData, build_page
-from hei_fastapi_ddd.shared.web.schema import ApiResponse, success
-from hei_fastapi_ddd.shared.schema.base import IdQuery, IdsRequest, to_schema, to_schema_list
-from hei_fastapi_ddd.shared.deps.auth import require_account_type, require_permission
-from hei_fastapi_ddd.shared.deps.db import get_db_session
-from hei_fastapi_ddd.contexts.sys.infrastructure.persistence.weak_password_repository import WeakPasswordRepository
+from hei_fastapi_ddd.contexts.sys.infrastructure.persistence.weak_password_repository import (
+    WeakPasswordRepository,
+)
 from hei_fastapi_ddd.contexts.sys.interfaces.http.weak_password_schemas import (
     SysWeakPasswordSchema,
     WeakPasswordAdminPageQuery,
@@ -25,6 +19,14 @@ from hei_fastapi_ddd.contexts.sys.interfaces.http.weak_password_schemas import (
     WeakPasswordListQuery,
     WeakPasswordUpdateRequest,
 )
+from hei_fastapi_ddd.shared.audit import snapshots as audit_snapshots
+from hei_fastapi_ddd.shared.config.enums import AccountType
+from hei_fastapi_ddd.shared.deps.auth import require_account_type, require_permission
+from hei_fastapi_ddd.shared.deps.db import get_db_session
+from hei_fastapi_ddd.shared.persistence.models.sys_weak_password import SysWeakPassword
+from hei_fastapi_ddd.shared.schema.base import IdQuery, IdsRequest, to_schema, to_schema_list
+from hei_fastapi_ddd.shared.web.pagination import PageData, build_page
+from hei_fastapi_ddd.shared.web.schema import ApiResponse, success
 
 router = APIRouter()
 

@@ -9,9 +9,9 @@ from typing import Any
 
 from pydantic import Field
 
-from hei_fastapi_ddd.shared.web.pagination import PageQuery
 from hei_fastapi_ddd.shared.schema.base import ApiSchema, Id
 from hei_fastapi_ddd.shared.schema.wire import WireBool, WireInt, WireMoney
+from hei_fastapi_ddd.shared.web.pagination import PageQuery
 
 
 class CgTestActivityCreateRequest(ApiSchema):

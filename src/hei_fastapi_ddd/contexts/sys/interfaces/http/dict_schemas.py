@@ -8,9 +8,9 @@ from typing import Annotated
 from pydantic import Field, field_serializer
 
 from hei_fastapi_ddd.shared.config.enums import StatusEnum, SysBizCategory
-from hei_fastapi_ddd.shared.web.pagination import PageQuery
 from hei_fastapi_ddd.shared.schema.base import ApiSchema
 from hei_fastapi_ddd.shared.schema.wire import WireInt
+from hei_fastapi_ddd.shared.web.pagination import PageQuery
 
 DictId = Annotated[str, Field(min_length=1, max_length=32)]  # 字典主键类型，长度 1-32
 

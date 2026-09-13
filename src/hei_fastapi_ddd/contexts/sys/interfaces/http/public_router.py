@@ -5,9 +5,9 @@
 
 from fastapi import APIRouter
 
-from hei_fastapi_ddd.shared.web.schema import ApiResponse, success
 from hei_fastapi_ddd.contexts.auth.interfaces.http.auth_schemas import SiteFooterResponse
 from hei_fastapi_ddd.contexts.sys.application.public.site_footer import resolve_site_footer
+from hei_fastapi_ddd.shared.web.schema import ApiResponse, success
 
 router = APIRouter()
 

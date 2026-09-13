@@ -8,8 +8,8 @@ from __future__ import annotations
 from starlette.requests import Request
 from starlette.types import ASGIApp, Receive, Scope, Send
 
-from hei_fastapi_ddd.shared.web.errors import asgi_error_response
 from hei_fastapi_ddd.shared.security.csrf import validate_csrf
+from hei_fastapi_ddd.shared.web.errors import asgi_error_response
 
 
 class CsrfProtectMiddleware:

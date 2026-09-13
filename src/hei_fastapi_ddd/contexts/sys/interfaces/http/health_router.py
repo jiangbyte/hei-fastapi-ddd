@@ -6,10 +6,10 @@
 from fastapi import APIRouter, Response
 from sqlalchemy import text
 
-from hei_fastapi_ddd.shared.redis.redis import get_redis
 from hei_fastapi_ddd.shared.config.settings import settings
 from hei_fastapi_ddd.shared.config.sync import get_config_sync_state
 from hei_fastapi_ddd.shared.persistence.session import get_session_factory
+from hei_fastapi_ddd.shared.redis.redis import get_redis
 from hei_fastapi_ddd.shared.storage.manager import get_storage
 
 router = APIRouter()

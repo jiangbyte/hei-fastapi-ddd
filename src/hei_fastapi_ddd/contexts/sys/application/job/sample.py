@@ -6,6 +6,7 @@
 import logging
 
 from hei_fastapi_ddd.contexts.sys.application.job.registry import job_handler
+
 logger = logging.getLogger(__name__)
 
 

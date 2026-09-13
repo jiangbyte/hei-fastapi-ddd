@@ -8,8 +8,8 @@
 from sqlalchemy import event
 from sqlalchemy.orm import Session
 
-from hei_fastapi_ddd.shared.persistence.mixins import TimestampMixin
 from hei_fastapi_ddd.shared.observability.context import account_id_ctx
+from hei_fastapi_ddd.shared.persistence.mixins import TimestampMixin
 
 
 def _current_account_id() -> str | None:

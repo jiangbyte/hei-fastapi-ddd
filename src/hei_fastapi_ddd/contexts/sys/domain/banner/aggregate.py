@@ -8,8 +8,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
-from hei_fastapi_ddd.ddd_kernel.entity import AggregateRoot
 from hei_fastapi_ddd.ddd_kernel.domain_exception import DomainException
+from hei_fastapi_ddd.ddd_kernel.entity import AggregateRoot
 
 
 @dataclass

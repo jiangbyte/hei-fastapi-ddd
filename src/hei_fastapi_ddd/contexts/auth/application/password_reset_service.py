@@ -9,20 +9,6 @@ import json
 import secrets
 from urllib.parse import urlencode
 
-from hei_fastapi_ddd.shared.audit import snapshots as audit_snapshots
-from hei_fastapi_ddd.shared.redis.keys import (
-    password_reset_token_key,
-    reset_password_otp_key,
-)
-from hei_fastapi_ddd.shared.config.enums import AccountType
-from hei_fastapi_ddd.shared.config.reader import config_reader
-from hei_fastapi_ddd.shared.config.settings import settings
-from hei_fastapi_ddd.shared.persistence.transaction import transactional
-from hei_fastapi_ddd.shared.email.sender import send_templated_mail
-from hei_fastapi_ddd.shared.exceptions.business import AuthenticationError, BusinessError
-from hei_fastapi_ddd.shared.security.password import hash_password_async, verify_password_async
-from hei_fastapi_ddd.shared.security.token import generate_token
-from hei_fastapi_ddd.shared.sms.sender import send_templated_sms
 from hei_fastapi_ddd.contexts.auth.application.base import _PASSWORD_RESET_URL_KEYS, _audit_record
 from hei_fastapi_ddd.contexts.auth.interfaces.http.auth_schemas import (
     ForgotPasswordByPhoneRequest,
@@ -34,8 +20,24 @@ from hei_fastapi_ddd.contexts.iam.application.account.password_helper import (
     validate_and_record_password,
 )
 from hei_fastapi_ddd.contexts.iam.domain.enums import AccountIdentityType
-from hei_fastapi_ddd.contexts.sys.application.audit.audit_application_service import OperationAuditService
+from hei_fastapi_ddd.contexts.sys.application.audit.audit_application_service import (
+    OperationAuditService,
+)
 from hei_fastapi_ddd.contexts.sys.application.audit.support import resolve_account_login
+from hei_fastapi_ddd.shared.audit import snapshots as audit_snapshots
+from hei_fastapi_ddd.shared.config.enums import AccountType
+from hei_fastapi_ddd.shared.config.reader import config_reader
+from hei_fastapi_ddd.shared.config.settings import settings
+from hei_fastapi_ddd.shared.email.sender import send_templated_mail
+from hei_fastapi_ddd.shared.exceptions.business import AuthenticationError, BusinessError
+from hei_fastapi_ddd.shared.persistence.transaction import transactional
+from hei_fastapi_ddd.shared.redis.keys import (
+    password_reset_token_key,
+    reset_password_otp_key,
+)
+from hei_fastapi_ddd.shared.security.password import hash_password_async, verify_password_async
+from hei_fastapi_ddd.shared.security.token import generate_token
+from hei_fastapi_ddd.shared.sms.sender import send_templated_sms
 
 
 class PasswordResetMixin:

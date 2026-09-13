@@ -14,16 +14,20 @@ import time
 from datetime import UTC, datetime
 from pathlib import Path
 
-from hei_fastapi_ddd.shared.redis.keys import job_run_lock_key
-from hei_fastapi_ddd.shared.redis.redis import get_redis
+from hei_fastapi_ddd.contexts.sys.application.job import cron as cron_util
+from hei_fastapi_ddd.contexts.sys.application.job.registry import resolve
+from hei_fastapi_ddd.contexts.sys.infrastructure.persistence.job_po import SysJobLog
+from hei_fastapi_ddd.contexts.sys.infrastructure.persistence.job_repository import (
+    JobLogRepository,
+    JobRepository,
+)
 from hei_fastapi_ddd.shared.config.settings import settings
 from hei_fastapi_ddd.shared.persistence.session import get_session_factory
 from hei_fastapi_ddd.shared.persistence.transaction import transactional
+from hei_fastapi_ddd.shared.redis.keys import job_run_lock_key
+from hei_fastapi_ddd.shared.redis.redis import get_redis
 from hei_fastapi_ddd.shared.schema.datetime import ensure_utc_datetime
-from hei_fastapi_ddd.contexts.sys.application.job import cron as cron_util
-from hei_fastapi_ddd.contexts.sys.infrastructure.persistence.job_po import SysJobLog
-from hei_fastapi_ddd.contexts.sys.application.job.registry import resolve
-from hei_fastapi_ddd.contexts.sys.infrastructure.persistence.job_repository import JobLogRepository, JobRepository
+
 logger = logging.getLogger(__name__)
 
 # 同一任务执行锁过期时间：覆盖全程，进程崩溃后自动过期放行（对齐 hei-boot @Lock4j）。

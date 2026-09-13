@@ -5,10 +5,16 @@
 
 from __future__ import annotations
 
+from hei_fastapi_ddd.contexts.profile.infrastructure.identity_providers.base import (
+    IdentityVerifyProvider,
+)
+from hei_fastapi_ddd.contexts.profile.infrastructure.identity_providers.mock import (
+    MockIdentityVerifyProvider,
+)
+from hei_fastapi_ddd.contexts.profile.infrastructure.identity_providers.third_party import (
+    ThirdPartyIdentityVerifyProvider,
+)
 from hei_fastapi_ddd.shared.exceptions.business import BusinessError
-from hei_fastapi_ddd.contexts.profile.infrastructure.identity_providers.base import IdentityVerifyProvider
-from hei_fastapi_ddd.contexts.profile.infrastructure.identity_providers.mock import MockIdentityVerifyProvider
-from hei_fastapi_ddd.contexts.profile.infrastructure.identity_providers.third_party import ThirdPartyIdentityVerifyProvider
 
 
 class IdentityVerifyProviderRegistry:

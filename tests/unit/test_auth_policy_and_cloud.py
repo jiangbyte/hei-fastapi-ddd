@@ -4,8 +4,8 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from hei_fastapi_ddd.shared.config.enums import AccountType
 from hei_fastapi_ddd.contexts.auth.domain.policy import get_auth_options, get_login_policy
+from hei_fastapi_ddd.shared.config.enums import AccountType
 
 
 def test_login_policy_defaults(monkeypatch):

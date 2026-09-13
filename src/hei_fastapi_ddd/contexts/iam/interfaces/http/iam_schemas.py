@@ -7,11 +7,11 @@ from datetime import datetime
 
 from pydantic import Field
 
+from hei_fastapi_ddd.contexts.iam.domain.enums import AccountIdentityBindStatus, AccountIdentityType
+from hei_fastapi_ddd.contexts.profile.interfaces.http.identity_schemas import IdentityStatusResponse
 from hei_fastapi_ddd.shared.config.enums import AccountStatusEnum, AccountType, DataScope
 from hei_fastapi_ddd.shared.schema.base import ApiSchema
 from hei_fastapi_ddd.shared.schema.wire import WireBool
-from hei_fastapi_ddd.contexts.iam.domain.enums import AccountIdentityBindStatus, AccountIdentityType
-from hei_fastapi_ddd.contexts.profile.interfaces.http.identity_schemas import IdentityStatusResponse
 
 
 class AccountIdentitySchema(ApiSchema):

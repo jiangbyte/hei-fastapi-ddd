@@ -10,10 +10,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import aliased
 from sqlalchemy.sql.elements import ColumnElement
 
-from hei_fastapi_ddd.shared.persistence.compat import like_contains
-from hei_fastapi_ddd.shared.exceptions.business import NotFoundError
-from hei_fastapi_ddd.contexts.iam.infrastructure.persistence.account_po import SysAccount
-from hei_fastapi_ddd.contexts.iam.infrastructure.persistence.dept_po import SysDept
+from hei_fastapi_ddd.contexts.iam.application.reference_guard import (
+    count_role_references,
+    raise_if_referenced,
+)
 from hei_fastapi_ddd.contexts.iam.domain.enums import (
     GrantMode,
     GrantSubjectType,
@@ -22,9 +22,13 @@ from hei_fastapi_ddd.contexts.iam.domain.enums import (
     IamRelationType,
     ResourceType,
 )
-from hei_fastapi_ddd.contexts.iam.application.reference_guard import count_role_references, raise_if_referenced
+from hei_fastapi_ddd.contexts.iam.infrastructure.persistence.account_po import SysAccount
+from hei_fastapi_ddd.contexts.iam.infrastructure.persistence.dept_po import SysDept
 from hei_fastapi_ddd.contexts.iam.infrastructure.persistence.relation_po import SysIamRelation
-from hei_fastapi_ddd.contexts.iam.infrastructure.persistence.relation_repository import IamRelationRepository, account_dept_condition
+from hei_fastapi_ddd.contexts.iam.infrastructure.persistence.relation_repository import (
+    IamRelationRepository,
+    account_dept_condition,
+)
 from hei_fastapi_ddd.contexts.iam.infrastructure.persistence.resource_po import SysResource
 from hei_fastapi_ddd.contexts.iam.infrastructure.persistence.role_po import SysRole
 from hei_fastapi_ddd.contexts.iam.interfaces.http.role_schemas import (
@@ -35,6 +39,8 @@ from hei_fastapi_ddd.contexts.iam.interfaces.http.role_schemas import (
     RoleResourceGrantInfo,
     RoleUpdateRequest,
 )
+from hei_fastapi_ddd.shared.exceptions.business import NotFoundError
+from hei_fastapi_ddd.shared.persistence.compat import like_contains
 
 
 class RoleRepository:

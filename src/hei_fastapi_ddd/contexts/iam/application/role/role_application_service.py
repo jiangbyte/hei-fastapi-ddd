@@ -5,31 +5,24 @@
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from hei_fastapi_ddd.shared.audit import snapshots as audit_snapshots
-from hei_fastapi_ddd.shared.config.enums import AccountType
-from hei_fastapi_ddd.shared.persistence.batch import chunked
-from hei_fastapi_ddd.shared.persistence.transaction import transactional
-from hei_fastapi_ddd.shared.exceptions.business import AuthorizationError, BusinessError, NotFoundError
-from hei_fastapi_ddd.shared.web.pagination import PageData, build_page
-from hei_fastapi_ddd.shared.schema.base import IdQuery, IdsRequest, to_schema, to_schema_list
-from hei_fastapi_ddd.shared.security.data_scope import (
-    IAM_ACCOUNT_PAGE,
-    IAM_DEPT_PAGE,
-    IAM_ROLE_PAGE,
-    build_data_scope_filter,
-    resolve_data_scope_dept_ids,
-)
-from hei_fastapi_ddd.shared.security.session import SessionPayload
-from hei_fastapi_ddd.shared.messaging import emit
-from hei_fastapi_ddd.contexts.iam.infrastructure.persistence.account_po import SysAccount
 from hei_fastapi_ddd.contexts.iam.application.account.query_service import AccountQueryService
-from hei_fastapi_ddd.contexts.iam.infrastructure.persistence.account_repository import AccountRepository
-from hei_fastapi_ddd.contexts.iam.application.client.client_application_service import ClientResourceService
+from hei_fastapi_ddd.contexts.iam.application.client.client_application_service import (
+    ClientResourceService,
+)
+from hei_fastapi_ddd.contexts.iam.application.resource.resource_application_service import (
+    ResourceService,
+)
+from hei_fastapi_ddd.contexts.iam.application.support import audit as iam_audit
 from hei_fastapi_ddd.contexts.iam.domain.enums import GrantSubjectType
-from hei_fastapi_ddd.contexts.iam.infrastructure.persistence.relation_po import SysIamRelation
-from hei_fastapi_ddd.contexts.iam.infrastructure.persistence.relation_repository import IamRelationRepository
-from hei_fastapi_ddd.contexts.iam.application.resource.resource_application_service import ResourceService
 from hei_fastapi_ddd.contexts.iam.domain.role.constants import SUPER_ADMIN_ROLE_CODE
+from hei_fastapi_ddd.contexts.iam.infrastructure.persistence.account_po import SysAccount
+from hei_fastapi_ddd.contexts.iam.infrastructure.persistence.account_repository import (
+    AccountRepository,
+)
+from hei_fastapi_ddd.contexts.iam.infrastructure.persistence.relation_po import SysIamRelation
+from hei_fastapi_ddd.contexts.iam.infrastructure.persistence.relation_repository import (
+    IamRelationRepository,
+)
 from hei_fastapi_ddd.contexts.iam.infrastructure.persistence.role_po import SysRole
 from hei_fastapi_ddd.contexts.iam.infrastructure.persistence.role_repository import RoleRepository
 from hei_fastapi_ddd.contexts.iam.interfaces.http.role_schemas import (
@@ -47,8 +40,27 @@ from hei_fastapi_ddd.contexts.iam.interfaces.http.role_schemas import (
     RoleUpdateRequest,
     SysRoleSchema,
 )
-from hei_fastapi_ddd.contexts.iam.application.support import audit as iam_audit
 from hei_fastapi_ddd.contexts.profile.application.utils.profile import get_profiles_batch
+from hei_fastapi_ddd.shared.audit import snapshots as audit_snapshots
+from hei_fastapi_ddd.shared.config.enums import AccountType
+from hei_fastapi_ddd.shared.exceptions.business import (
+    AuthorizationError,
+    BusinessError,
+    NotFoundError,
+)
+from hei_fastapi_ddd.shared.messaging import emit
+from hei_fastapi_ddd.shared.persistence.batch import chunked
+from hei_fastapi_ddd.shared.persistence.transaction import transactional
+from hei_fastapi_ddd.shared.schema.base import IdQuery, IdsRequest, to_schema, to_schema_list
+from hei_fastapi_ddd.shared.security.data_scope import (
+    IAM_ACCOUNT_PAGE,
+    IAM_DEPT_PAGE,
+    IAM_ROLE_PAGE,
+    build_data_scope_filter,
+    resolve_data_scope_dept_ids,
+)
+from hei_fastapi_ddd.shared.security.session import SessionPayload
+from hei_fastapi_ddd.shared.web.pagination import PageData, build_page
 
 
 class RoleService:

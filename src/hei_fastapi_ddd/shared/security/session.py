@@ -13,10 +13,14 @@ from dataclasses import asdict, dataclass, field
 from datetime import UTC, datetime
 from typing import TypedDict
 
-from hei_fastapi_ddd.shared.redis.keys import login_account_tokens_key, login_token_key, login_tokens_key
-from hei_fastapi_ddd.shared.redis.redis import get_redis
 from hei_fastapi_ddd.shared.config.enums import AccountType, DataScope
 from hei_fastapi_ddd.shared.config.settings import settings
+from hei_fastapi_ddd.shared.redis.keys import (
+    login_account_tokens_key,
+    login_token_key,
+    login_tokens_key,
+)
+from hei_fastapi_ddd.shared.redis.redis import get_redis
 
 logger = logging.getLogger(__name__)
 

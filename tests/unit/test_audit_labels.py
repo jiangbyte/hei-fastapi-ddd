@@ -3,8 +3,8 @@
 审计叙事文案与路径映射单元测试。
 """
 
-from hei_fastapi_ddd.shared.audit.path_catalog import resolve_audit_target
 from hei_fastapi_ddd.contexts.sys.infrastructure.audit_labels import build_content, is_path_summary
+from hei_fastapi_ddd.shared.audit.path_catalog import resolve_audit_target
 
 
 def test_build_identity_init_third_party_failure():

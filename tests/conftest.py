@@ -11,11 +11,11 @@ from httpx import ASGITransport, AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 import hei_fastapi_ddd.db_models  # noqa: F401 — 注册全部 ORM 元数据
+from hei_fastapi_ddd.factory import create_app
 from hei_fastapi_ddd.shared.config.settings import settings
+from hei_fastapi_ddd.shared.deps.db import get_db_session
 from hei_fastapi_ddd.shared.persistence.base import Base
 from hei_fastapi_ddd.shared.persistence.session import close_engine
-from hei_fastapi_ddd.shared.deps.db import get_db_session
-from hei_fastapi_ddd.factory import create_app
 from tests.db_support import resolve_test_db_url
 
 

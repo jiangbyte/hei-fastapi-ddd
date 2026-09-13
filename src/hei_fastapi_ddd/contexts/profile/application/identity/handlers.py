@@ -10,9 +10,10 @@ from typing import TYPE_CHECKING, Protocol
 from sqlalchemy.ext.asyncio import AsyncSession
 
 if TYPE_CHECKING:
-    from hei_fastapi_ddd.contexts.profile.application.identity.identity_application_service import ProfileIdentityService
+    from hei_fastapi_ddd.contexts.profile.application.identity.identity_application_service import (
+        ProfileIdentityService,
+    )
 
-from hei_fastapi_ddd.shared.exceptions.business import BusinessError
 from hei_fastapi_ddd.contexts.profile.application.identity import crypto as identity_crypto
 from hei_fastapi_ddd.contexts.profile.domain.identity.enums import (
     IdentitySnapshotStatus,
@@ -23,7 +24,10 @@ from hei_fastapi_ddd.contexts.profile.infrastructure.persistence.identity_reposi
     ProfileIdentityRepository,
     RealNameCaseRepository,
 )
-from hei_fastapi_ddd.contexts.profile.interfaces.http.identity_schemas import RealNameCaseSubmitRequest
+from hei_fastapi_ddd.contexts.profile.interfaces.http.identity_schemas import (
+    RealNameCaseSubmitRequest,
+)
+from hei_fastapi_ddd.shared.exceptions.business import BusinessError
 
 
 class RealNameBusinessHandler(Protocol):
@@ -65,7 +69,9 @@ class AccountVerifyHandler:
 
     async def on_approved(self, case: RealNameCase, reviewer_id: str) -> None:
         if self._profile_service is None:
-            from hei_fastapi_ddd.contexts.profile.application.identity.identity_application_service import ProfileIdentityService
+            from hei_fastapi_ddd.contexts.profile.application.identity.identity_application_service import (
+                ProfileIdentityService,
+            )
 
             self._profile_service = ProfileIdentityService(self.db)
         await self._profile_service.upsert_on_approve(case, reviewer_id)

@@ -43,13 +43,19 @@ from hei_fastapi_ddd.contexts.iam.interfaces.http.account_router import router a
 from hei_fastapi_ddd.contexts.iam.interfaces.http.client_router import router as iam_client_router
 from hei_fastapi_ddd.contexts.iam.interfaces.http.dept_router import router as iam_dept_router
 from hei_fastapi_ddd.contexts.iam.interfaces.http.group_router import router as iam_group_router
-from hei_fastapi_ddd.contexts.iam.interfaces.http.position_router import router as iam_position_router
+from hei_fastapi_ddd.contexts.iam.interfaces.http.position_router import (
+    router as iam_position_router,
+)
 from hei_fastapi_ddd.contexts.iam.interfaces.http.resource_portal_router import (
     router as iam_resource_portal_router,
 )
-from hei_fastapi_ddd.contexts.iam.interfaces.http.resource_router import router as iam_resource_router
+from hei_fastapi_ddd.contexts.iam.interfaces.http.resource_router import (
+    router as iam_resource_router,
+)
 from hei_fastapi_ddd.contexts.iam.interfaces.http.role_router import router as iam_role_router
-from hei_fastapi_ddd.contexts.profile.interfaces.http.admin_router import router as profile_admin_router
+from hei_fastapi_ddd.contexts.profile.interfaces.http.admin_router import (
+    router as profile_admin_router,
+)
 from hei_fastapi_ddd.contexts.profile.interfaces.http.identity_router import (
     admin_manage_router as profile_identity_manage_router,
 )
@@ -86,7 +92,9 @@ from hei_fastapi_ddd.contexts.sys.interfaces.http.file_portal_router import (
     router as file_portal_router,
 )
 from hei_fastapi_ddd.contexts.sys.interfaces.http.file_router import router as sys_file_router
-from hei_fastapi_ddd.contexts.sys.interfaces.http.health_router import router as internal_health_router
+from hei_fastapi_ddd.contexts.sys.interfaces.http.health_router import (
+    router as internal_health_router,
+)
 from hei_fastapi_ddd.contexts.sys.interfaces.http.job_router import router as sys_job_router
 from hei_fastapi_ddd.contexts.sys.interfaces.http.notice_router import (
     admin_router as notice_admin_router,

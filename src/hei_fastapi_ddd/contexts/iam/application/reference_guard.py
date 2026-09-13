@@ -8,17 +8,17 @@ from collections.abc import Iterable
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from hei_fastapi_ddd.shared.exceptions.business import ConflictError
-from hei_fastapi_ddd.contexts.iam.infrastructure.persistence.dept_po import SysDept
 from hei_fastapi_ddd.contexts.iam.domain.enums import (
     GrantSubjectType,
     IamRelationSubjectType,
     IamRelationTargetType,
     IamRelationType,
 )
+from hei_fastapi_ddd.contexts.iam.infrastructure.persistence.dept_po import SysDept
 from hei_fastapi_ddd.contexts.iam.infrastructure.persistence.relation_po import SysIamRelation
 from hei_fastapi_ddd.contexts.iam.infrastructure.persistence.resource_po import SysResource
 from hei_fastapi_ddd.contexts.iam.infrastructure.persistence.role_po import SysRole
+from hei_fastapi_ddd.shared.exceptions.business import ConflictError
 
 
 def unique_ids(values: Iterable[str]) -> list[str]:

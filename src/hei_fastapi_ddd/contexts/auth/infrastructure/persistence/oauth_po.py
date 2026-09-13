@@ -8,9 +8,9 @@ from datetime import datetime
 from sqlalchemy import JSON, DateTime, Index, String, Text, UniqueConstraint, func
 from sqlalchemy.orm import Mapped, mapped_column
 
+from hei_fastapi_ddd.shared.id_generator.snowflake import generate_snowflake_id
 from hei_fastapi_ddd.shared.persistence.base import Base
 from hei_fastapi_ddd.shared.persistence.mixins import TimestampMixin
-from hei_fastapi_ddd.shared.id_generator.snowflake import generate_snowflake_id
 
 
 class SysAccountOauthBinding(Base, TimestampMixin):

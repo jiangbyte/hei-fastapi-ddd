@@ -8,10 +8,14 @@ from datetime import datetime
 from sqlalchemy import Select, delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from hei_fastapi_ddd.shared.persistence.compat import ci_like
-from hei_fastapi_ddd.shared.exceptions.business import NotFoundError
 from hei_fastapi_ddd.contexts.sys.infrastructure.persistence.job_po import SysJob, SysJobLog
-from hei_fastapi_ddd.contexts.sys.interfaces.http.job_schemas import JobAdminPageQuery, JobCreateRequest, JobLogAdminPageQuery
+from hei_fastapi_ddd.contexts.sys.interfaces.http.job_schemas import (
+    JobAdminPageQuery,
+    JobCreateRequest,
+    JobLogAdminPageQuery,
+)
+from hei_fastapi_ddd.shared.exceptions.business import NotFoundError
+from hei_fastapi_ddd.shared.persistence.compat import ci_like
 
 
 class JobRepository:

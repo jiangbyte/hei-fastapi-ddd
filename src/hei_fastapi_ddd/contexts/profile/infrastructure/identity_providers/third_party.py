@@ -10,9 +10,6 @@ from typing import Any
 
 import httpx
 
-from hei_fastapi_ddd.shared.config.settings import settings
-from hei_fastapi_ddd.shared.exceptions.business import BusinessError
-from hei_fastapi_ddd.shared.security.safe_url import UnsafeUrlError, validate_outbound_url
 from hei_fastapi_ddd.contexts.profile.domain.identity.enums import VerifyChannel
 from hei_fastapi_ddd.contexts.profile.infrastructure.persistence.identity_po import RealNameCase
 from hei_fastapi_ddd.contexts.profile.interfaces.http.identity_schemas import (
@@ -20,6 +17,9 @@ from hei_fastapi_ddd.contexts.profile.interfaces.http.identity_schemas import (
     RealNameCaseInitResponse,
     RealNameCaseInitThirdPartyRequest,
 )
+from hei_fastapi_ddd.shared.config.settings import settings
+from hei_fastapi_ddd.shared.exceptions.business import BusinessError
+from hei_fastapi_ddd.shared.security.safe_url import UnsafeUrlError, validate_outbound_url
 
 logger = logging.getLogger(__name__)
 

@@ -13,9 +13,11 @@ from sqlalchemy import DateTime, Integer, String, Text, delete, func, select, up
 from sqlalchemy.orm import Mapped, mapped_column
 
 from hei_fastapi_ddd.shared.audit.queue import OperationAuditEvent
+from hei_fastapi_ddd.shared.id_generator.snowflake import generate_snowflake_id
 from hei_fastapi_ddd.shared.persistence.base import Base
 from hei_fastapi_ddd.shared.persistence.session import get_session_factory
-from hei_fastapi_ddd.shared.id_generator.snowflake import generate_snowflake_id
+
+
 class SysOperationAuditOutbox(Base):
     """审计发件箱表：在审计队列溢出或进程崩溃时暂存事件以恢复。"""
 

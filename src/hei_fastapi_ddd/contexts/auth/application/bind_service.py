@@ -6,15 +6,16 @@
 from __future__ import annotations
 
 import secrets
-from hei_fastapi_ddd.shared.redis.keys import (
-    bind_otp_key,
-)
+
+from hei_fastapi_ddd.contexts.iam.domain.enums import AccountIdentityType
 from hei_fastapi_ddd.shared.config.enums import AccountType
 from hei_fastapi_ddd.shared.config.settings import settings
 from hei_fastapi_ddd.shared.email.sender import send_templated_mail
 from hei_fastapi_ddd.shared.exceptions.business import BusinessError
+from hei_fastapi_ddd.shared.redis.keys import (
+    bind_otp_key,
+)
 from hei_fastapi_ddd.shared.sms.sender import send_templated_sms
-from hei_fastapi_ddd.contexts.iam.domain.enums import AccountIdentityType
 
 
 class BindCodeMixin:

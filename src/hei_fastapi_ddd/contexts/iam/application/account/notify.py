@@ -11,6 +11,7 @@ from typing import Any
 from hei_fastapi_ddd.shared.config.reader import config_reader
 from hei_fastapi_ddd.shared.email.sender import is_mail_configured, send_templated_mail
 from hei_fastapi_ddd.shared.sms.sender import send_templated_sms
+
 logger = logging.getLogger(__name__)
 
 

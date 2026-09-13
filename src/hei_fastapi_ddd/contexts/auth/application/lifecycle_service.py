@@ -7,18 +7,20 @@ from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
 
-from hei_fastapi_ddd.shared.audit import snapshots as audit_snapshots
-from hei_fastapi_ddd.shared.config.reader import config_reader
-from hei_fastapi_ddd.shared.config.settings import settings
-from hei_fastapi_ddd.shared.persistence.transaction import transactional
-from hei_fastapi_ddd.shared.security.session import SessionPayload, session_store
 from hei_fastapi_ddd.contexts.auth.application.base import _audit_record
 from hei_fastapi_ddd.contexts.auth.interfaces.http.auth_schemas import (
     CancelAccountRequest,
 )
 from hei_fastapi_ddd.contexts.iam.application.account.notify import notify_account_cancel_lifecycle
-from hei_fastapi_ddd.contexts.sys.application.audit.audit_application_service import OperationAuditService
+from hei_fastapi_ddd.contexts.sys.application.audit.audit_application_service import (
+    OperationAuditService,
+)
 from hei_fastapi_ddd.contexts.sys.application.audit.support import resolve_account_login
+from hei_fastapi_ddd.shared.audit import snapshots as audit_snapshots
+from hei_fastapi_ddd.shared.config.reader import config_reader
+from hei_fastapi_ddd.shared.config.settings import settings
+from hei_fastapi_ddd.shared.persistence.transaction import transactional
+from hei_fastapi_ddd.shared.security.session import SessionPayload, session_store
 
 
 class LifecycleMixin:
@@ -41,7 +43,9 @@ class LifecycleMixin:
         session: SessionPayload,
     ) -> None:
         """注销当前登录账号，并清理该账号下全部会话。"""
-        from hei_fastapi_ddd.contexts.iam.interfaces.http.account_schemas import AccountCancelPayload
+        from hei_fastapi_ddd.contexts.iam.interfaces.http.account_schemas import (
+            AccountCancelPayload,
+        )
 
         account_before = await self.account_repo.get_required(session.account_id)
         account_name = await resolve_account_login(self.db, session.account_id) or session.account_id

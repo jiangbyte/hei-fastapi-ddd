@@ -8,15 +8,15 @@ from typing import Any
 
 from pydantic import Field, model_validator
 
-from hei_fastapi_ddd.shared.web.pagination import PageQuery
-from hei_fastapi_ddd.shared.schema.base import ApiSchema, Id
-from hei_fastapi_ddd.shared.schema.wire import WireBool, WireInt
-from hei_fastapi_ddd.shared.security.html_sanitize import sanitize_html
-from hei_fastapi_ddd.contexts.sys.domain.notice.enums import NoticeKind
 from hei_fastapi_ddd.contexts.sys.application.notice.target_scope import (
     has_enabled_publish_location,
     validate_message_targets,
 )
+from hei_fastapi_ddd.contexts.sys.domain.notice.enums import NoticeKind
+from hei_fastapi_ddd.shared.schema.base import ApiSchema, Id
+from hei_fastapi_ddd.shared.schema.wire import WireBool, WireInt
+from hei_fastapi_ddd.shared.security.html_sanitize import sanitize_html
+from hei_fastapi_ddd.shared.web.pagination import PageQuery
 
 
 class SysNoticeCreateRequest(ApiSchema):

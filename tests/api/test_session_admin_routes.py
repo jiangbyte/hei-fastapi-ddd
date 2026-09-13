@@ -1,12 +1,15 @@
 """ Author: Charlie """
 
+from hei_fastapi_ddd.contexts.iam.domain.enums import AccountIdentityBindStatus, AccountIdentityType
+from hei_fastapi_ddd.contexts.iam.infrastructure.persistence.account_po import (
+    SysAccount,
+    SysAccountIdentity,
+)
+from hei_fastapi_ddd.contexts.profile.infrastructure.persistence.admin_po import ProfileUserAdmin
 from hei_fastapi_ddd.shared.config.enums import AccountStatusEnum, AccountType
+from hei_fastapi_ddd.shared.deps.db import get_db_session
 from hei_fastapi_ddd.shared.security.password import hash_password
 from hei_fastapi_ddd.shared.security.session import SessionPayload, session_store
-from hei_fastapi_ddd.shared.deps.db import get_db_session
-from hei_fastapi_ddd.contexts.iam.infrastructure.persistence.account_po import SysAccount, SysAccountIdentity
-from hei_fastapi_ddd.contexts.iam.domain.enums import AccountIdentityBindStatus, AccountIdentityType
-from hei_fastapi_ddd.contexts.profile.infrastructure.persistence.admin_po import ProfileUserAdmin
 
 
 async def _seed_session_admin(client, token: str, permissions: list[str]) -> SysAccount:

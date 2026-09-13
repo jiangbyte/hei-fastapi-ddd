@@ -8,19 +8,6 @@ from __future__ import annotations
 import secrets
 from uuid import uuid4
 
-from hei_fastapi_ddd.shared.audit import snapshots as audit_snapshots
-from hei_fastapi_ddd.shared.redis.keys import (
-    register_otp_key,
-)
-from hei_fastapi_ddd.shared.config.enums import AccountStatusEnum, AccountType
-from hei_fastapi_ddd.shared.config.reader import config_reader
-from hei_fastapi_ddd.shared.config.settings import settings
-from hei_fastapi_ddd.shared.persistence.transaction import transactional
-from hei_fastapi_ddd.shared.email.sender import send_templated_mail
-from hei_fastapi_ddd.shared.exceptions.business import BusinessError
-from hei_fastapi_ddd.shared.security.account_login import require_account_login, sanitize_account_base
-from hei_fastapi_ddd.shared.security.password import hash_password_async
-from hei_fastapi_ddd.shared.sms.sender import send_templated_sms
 from hei_fastapi_ddd.contexts.auth.application.base import _audit_record
 from hei_fastapi_ddd.contexts.auth.domain.policy import (
     get_register_policy,
@@ -32,15 +19,37 @@ from hei_fastapi_ddd.contexts.auth.interfaces.http.auth_schemas import (
 from hei_fastapi_ddd.contexts.iam.application.account.password_helper import (
     validate_and_record_password,
 )
+from hei_fastapi_ddd.contexts.iam.domain.enums import AccountIdentityType
 from hei_fastapi_ddd.contexts.iam.interfaces.http.account_schemas import (
     AccountCreateRequest,
     AccountDeptAssignRequest,
     AccountRoleAssignRequest,
 )
-from hei_fastapi_ddd.contexts.iam.domain.enums import AccountIdentityType
-from hei_fastapi_ddd.contexts.profile.infrastructure.persistence.portal_repository import ProfileUserPortalRepository
-from hei_fastapi_ddd.contexts.profile.interfaces.http.portal_schemas import ProfileUserPortalUpsertPayload
-from hei_fastapi_ddd.contexts.sys.application.audit.audit_application_service import OperationAuditService
+from hei_fastapi_ddd.contexts.profile.infrastructure.persistence.portal_repository import (
+    ProfileUserPortalRepository,
+)
+from hei_fastapi_ddd.contexts.profile.interfaces.http.portal_schemas import (
+    ProfileUserPortalUpsertPayload,
+)
+from hei_fastapi_ddd.contexts.sys.application.audit.audit_application_service import (
+    OperationAuditService,
+)
+from hei_fastapi_ddd.shared.audit import snapshots as audit_snapshots
+from hei_fastapi_ddd.shared.config.enums import AccountStatusEnum, AccountType
+from hei_fastapi_ddd.shared.config.reader import config_reader
+from hei_fastapi_ddd.shared.config.settings import settings
+from hei_fastapi_ddd.shared.email.sender import send_templated_mail
+from hei_fastapi_ddd.shared.exceptions.business import BusinessError
+from hei_fastapi_ddd.shared.persistence.transaction import transactional
+from hei_fastapi_ddd.shared.redis.keys import (
+    register_otp_key,
+)
+from hei_fastapi_ddd.shared.security.account_login import (
+    require_account_login,
+    sanitize_account_base,
+)
+from hei_fastapi_ddd.shared.security.password import hash_password_async
+from hei_fastapi_ddd.shared.sms.sender import send_templated_sms
 
 
 class RegisterMixin:

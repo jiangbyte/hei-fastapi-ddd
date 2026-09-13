@@ -8,12 +8,9 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from hei_fastapi_ddd.shared.config.enums import AccountType
-from hei_fastapi_ddd.shared.web.pagination import PageData
-from hei_fastapi_ddd.shared.web.schema import ApiResponse, success
-from hei_fastapi_ddd.shared.schema.base import IdQuery, IdsRequest
-from hei_fastapi_ddd.shared.deps.auth import require_account_type, require_permission
-from hei_fastapi_ddd.shared.deps.db import get_db_session
+from hei_fastapi_ddd.contexts.sys.application.codegen.codegen_application_service import (
+    CodegenService,
+)
 from hei_fastapi_ddd.contexts.sys.interfaces.http.codegen_schemas import (
     CodegenFieldsQuery,
     CodegenFieldsUpdateBatchRequest,
@@ -29,7 +26,12 @@ from hei_fastapi_ddd.contexts.sys.interfaces.http.codegen_schemas import (
     SysCodegenFieldSchema,
     SysCodegenPlanSchema,
 )
-from hei_fastapi_ddd.contexts.sys.application.codegen.codegen_application_service import CodegenService
+from hei_fastapi_ddd.shared.config.enums import AccountType
+from hei_fastapi_ddd.shared.deps.auth import require_account_type, require_permission
+from hei_fastapi_ddd.shared.deps.db import get_db_session
+from hei_fastapi_ddd.shared.schema.base import IdQuery, IdsRequest
+from hei_fastapi_ddd.shared.web.pagination import PageData
+from hei_fastapi_ddd.shared.web.schema import ApiResponse, success
 
 router = APIRouter()
 

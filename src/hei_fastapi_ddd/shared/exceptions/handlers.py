@@ -18,10 +18,16 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from hei_fastapi_ddd.shared.config.settings import settings
 from hei_fastapi_ddd.shared.exceptions.base import AppError
-from hei_fastapi_ddd.shared.observability.metrics import record_app_exception, record_validation_error
+from hei_fastapi_ddd.shared.observability.metrics import (
+    record_app_exception,
+    record_validation_error,
+)
+from hei_fastapi_ddd.shared.security.permission_registry import (
+    ACCOUNT_TYPE_META_ATTR,
+    PERMISSION_META_ATTR,
+)
 from hei_fastapi_ddd.shared.web.errors import api_error_response
 from hei_fastapi_ddd.shared.web.schema import ApiErrorResponse
-from hei_fastapi_ddd.shared.security.permission_registry import ACCOUNT_TYPE_META_ATTR, PERMISSION_META_ATTR
 
 # 认证根依赖回调集合：由应用侧装配时注册（core 不依赖业务包）。
 _AUTH_ROOT_CALLABLES: set[Callable[..., object]] = set()

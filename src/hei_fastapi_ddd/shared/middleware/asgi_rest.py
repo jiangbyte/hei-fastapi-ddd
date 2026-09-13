@@ -22,16 +22,23 @@ from hei_fastapi_ddd.shared.audit.field_filter import to_safe_map
 from hei_fastapi_ddd.shared.audit.path_catalog import resolve_audit_target
 from hei_fastapi_ddd.shared.audit.queue import OperationAuditEvent, operation_audit_queue
 from hei_fastapi_ddd.shared.audit.skip_catalog import should_skip_audit
-from hei_fastapi_ddd.shared.redis.redis import get_redis
 from hei_fastapi_ddd.shared.config.enums import AccountType, account_type_url_segment
 from hei_fastapi_ddd.shared.exceptions.business import AuthenticationError
 from hei_fastapi_ddd.shared.network.client_ip import get_client_ip
-from hei_fastapi_ddd.shared.observability.context import account_id_ctx, account_type_ctx, client_ip_ctx
+from hei_fastapi_ddd.shared.observability.context import (
+    account_id_ctx,
+    account_type_ctx,
+    client_ip_ctx,
+)
 from hei_fastapi_ddd.shared.paths import API_ROOT_PREFIX
-from hei_fastapi_ddd.shared.web.errors import asgi_error_response
+from hei_fastapi_ddd.shared.redis.redis import get_redis
 from hei_fastapi_ddd.shared.security.auth_whitelist import is_auth_whitelisted
-from hei_fastapi_ddd.shared.security.session_auth import get_request_session, resolve_request_session
+from hei_fastapi_ddd.shared.security.session_auth import (
+    get_request_session,
+    resolve_request_session,
+)
 from hei_fastapi_ddd.shared.security.session_token import extract_session_token
+from hei_fastapi_ddd.shared.web.errors import asgi_error_response
 
 logger = logging.getLogger(__name__)
 

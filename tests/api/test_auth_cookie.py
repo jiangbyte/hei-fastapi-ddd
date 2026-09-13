@@ -7,9 +7,9 @@ from unittest.mock import AsyncMock
 import pytest
 from httpx import ASGITransport, AsyncClient
 
+from hei_fastapi_ddd.factory import create_app
 from hei_fastapi_ddd.shared.config.settings import settings
 from hei_fastapi_ddd.shared.security.session import SessionPayload
-from hei_fastapi_ddd.factory import create_app
 
 
 @pytest.mark.asyncio

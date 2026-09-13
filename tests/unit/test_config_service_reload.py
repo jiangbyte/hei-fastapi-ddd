@@ -5,11 +5,14 @@
 
 from sqlalchemy import select
 
-from hei_fastapi_ddd.shared.config.reader import config_reader
-from hei_fastapi_ddd.shared.persistence.models.sys_config import SysConfig
-from hei_fastapi_ddd.shared.id_generator.snowflake import generate_snowflake_id
-from hei_fastapi_ddd.contexts.sys.interfaces.http.config_schemas import ConfigBatchItem, ConfigBatchSaveRequest
 from hei_fastapi_ddd.contexts.sys.application.config.config_application_service import ConfigService
+from hei_fastapi_ddd.contexts.sys.interfaces.http.config_schemas import (
+    ConfigBatchItem,
+    ConfigBatchSaveRequest,
+)
+from hei_fastapi_ddd.shared.config.reader import config_reader
+from hei_fastapi_ddd.shared.id_generator.snowflake import generate_snowflake_id
+from hei_fastapi_ddd.shared.persistence.models.sys_config import SysConfig
 
 
 async def test_batch_save_reloads_config_before_request_transaction_commits(db_session):

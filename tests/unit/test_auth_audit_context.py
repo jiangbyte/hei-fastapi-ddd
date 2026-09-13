@@ -1,8 +1,8 @@
 """ Author: Charlie """
 
+from hei_fastapi_ddd.contexts.auth.application.auth_application_service import _audit_record
 from hei_fastapi_ddd.shared.audit import context as audit_context
 from hei_fastapi_ddd.shared.audit import snapshots as audit_snapshots
-from hei_fastapi_ddd.contexts.auth.application.auth_application_service import _audit_record
 
 
 def test_audit_record_merges_context_and_explicit_kwargs():

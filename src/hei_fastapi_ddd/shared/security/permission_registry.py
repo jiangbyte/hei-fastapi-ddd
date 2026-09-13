@@ -15,12 +15,12 @@ from typing import Any
 from fastapi import FastAPI
 from fastapi.routing import APIRoute
 
+from hei_fastapi_ddd.shared.config.enums import AccountType, account_type_url_segment
 from hei_fastapi_ddd.shared.redis.keys import (
     permission_resource_cache_key,
     permission_resource_method_cache_key,
 )
 from hei_fastapi_ddd.shared.redis.redis import get_redis
-from hei_fastapi_ddd.shared.config.enums import AccountType, account_type_url_segment
 
 logger = logging.getLogger(__name__)
 

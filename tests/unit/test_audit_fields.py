@@ -1,8 +1,8 @@
 """ Author: Charlie """
 
+from hei_fastapi_ddd.contexts.sys.infrastructure.persistence.dict_po import SysDict
 from hei_fastapi_ddd.shared.config.enums import StatusEnum, SysBizCategory
 from hei_fastapi_ddd.shared.observability.context import account_id_ctx
-from hei_fastapi_ddd.contexts.sys.infrastructure.persistence.dict_po import SysDict
 
 
 async def test_timestamp_mixin_injects_created_and_updated_by(db_session):

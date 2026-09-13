@@ -3,25 +3,34 @@
 import pytest
 from sqlalchemy import select
 
-from hei_fastapi_ddd.shared.config.enums import AccountStatusEnum, AccountType, DataScope, StatusEnum
-from hei_fastapi_ddd.shared.exceptions.business import BusinessError, ConflictError
-from hei_fastapi_ddd.shared.schema.base import IdsRequest
+from hei_fastapi_ddd.contexts.iam.application.dept.dept_application_service import DeptService
+from hei_fastapi_ddd.contexts.iam.application.group.group_application_service import GroupService
+from hei_fastapi_ddd.contexts.iam.application.position.position_application_service import (
+    PositionService,
+)
+from hei_fastapi_ddd.contexts.iam.application.resource.resource_application_service import (
+    ResourceService,
+)
+from hei_fastapi_ddd.contexts.iam.application.role.role_application_service import RoleService
+from hei_fastapi_ddd.contexts.iam.domain.enums import GrantSubjectType, ResourceType, RoleScopeType
+from hei_fastapi_ddd.contexts.iam.domain.role.constants import SUPER_ADMIN_ROLE_CODE
 from hei_fastapi_ddd.contexts.iam.infrastructure.persistence.account_po import SysAccount
 from hei_fastapi_ddd.contexts.iam.infrastructure.persistence.dept_po import SysDept
-from hei_fastapi_ddd.contexts.iam.interfaces.http.dept_schemas import DeptUpdateRequest
-from hei_fastapi_ddd.contexts.iam.application.dept.dept_application_service import DeptService
-from hei_fastapi_ddd.contexts.iam.domain.enums import GrantSubjectType, ResourceType, RoleScopeType
 from hei_fastapi_ddd.contexts.iam.infrastructure.persistence.group_po import SysGroup
-from hei_fastapi_ddd.contexts.iam.application.group.group_application_service import GroupService
 from hei_fastapi_ddd.contexts.iam.infrastructure.persistence.position_po import SysPosition
-from hei_fastapi_ddd.contexts.iam.application.position.position_application_service import PositionService
 from hei_fastapi_ddd.contexts.iam.infrastructure.persistence.resource_po import SysResource
-from hei_fastapi_ddd.contexts.iam.interfaces.http.resource_schemas import ResourceUpdateRequest
-from hei_fastapi_ddd.contexts.iam.application.resource.resource_application_service import ResourceService
-from hei_fastapi_ddd.contexts.iam.domain.role.constants import SUPER_ADMIN_ROLE_CODE
 from hei_fastapi_ddd.contexts.iam.infrastructure.persistence.role_po import SysRole
+from hei_fastapi_ddd.contexts.iam.interfaces.http.dept_schemas import DeptUpdateRequest
+from hei_fastapi_ddd.contexts.iam.interfaces.http.resource_schemas import ResourceUpdateRequest
 from hei_fastapi_ddd.contexts.iam.interfaces.http.role_schemas import RoleUpdateRequest
-from hei_fastapi_ddd.contexts.iam.application.role.role_application_service import RoleService
+from hei_fastapi_ddd.shared.config.enums import (
+    AccountStatusEnum,
+    AccountType,
+    DataScope,
+    StatusEnum,
+)
+from hei_fastapi_ddd.shared.exceptions.business import BusinessError, ConflictError
+from hei_fastapi_ddd.shared.schema.base import IdsRequest
 from tests.iam_relation_helpers import (
     account_dept,
     account_group,

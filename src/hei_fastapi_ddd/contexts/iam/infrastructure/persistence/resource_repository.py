@@ -6,23 +6,31 @@
 from sqlalchemy import Select, delete, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from hei_fastapi_ddd.shared.config.enums import AccountType, StatusEnum
-from hei_fastapi_ddd.shared.exceptions.business import ConflictError, NotFoundError
-from hei_fastapi_ddd.contexts.iam.domain.enums import (
-    IamRelationSubjectType,
-    IamRelationTargetType,
-    IamRelationType,
-    ResourceType,
-)
 from hei_fastapi_ddd.contexts.iam.application.reference_guard import (
     count_resource_references,
     ensure_not_self_or_descendant,
     list_descendant_ids,
     raise_if_referenced,
 )
+from hei_fastapi_ddd.contexts.iam.domain.enums import (
+    IamRelationSubjectType,
+    IamRelationTargetType,
+    IamRelationType,
+    ResourceType,
+)
 from hei_fastapi_ddd.contexts.iam.infrastructure.persistence.relation_po import SysIamRelation
-from hei_fastapi_ddd.contexts.iam.infrastructure.persistence.relation_repository import IamRelationRepository
-from hei_fastapi_ddd.contexts.iam.infrastructure.persistence.resource_po import SysResource, SysResourceModule
+from hei_fastapi_ddd.contexts.iam.infrastructure.persistence.relation_repository import (
+    IamRelationRepository,
+)
+from hei_fastapi_ddd.contexts.iam.infrastructure.persistence.resource_po import (
+    SysResource,
+    SysResourceModule,
+)
+from hei_fastapi_ddd.contexts.iam.interfaces.http.iam_schemas import (
+    ResourceGrantMenuOption,
+    ResourceGrantModuleOption,
+    ResourcePermissionOption,
+)
 from hei_fastapi_ddd.contexts.iam.interfaces.http.resource_schemas import (
     ResourceAdminPageQuery,
     ResourceButtonPageQuery,
@@ -33,11 +41,8 @@ from hei_fastapi_ddd.contexts.iam.interfaces.http.resource_schemas import (
     ResourcePermissionBindRequest,
     ResourceUpdateRequest,
 )
-from hei_fastapi_ddd.contexts.iam.interfaces.http.iam_schemas import (
-    ResourceGrantMenuOption,
-    ResourceGrantModuleOption,
-    ResourcePermissionOption,
-)
+from hei_fastapi_ddd.shared.config.enums import AccountType, StatusEnum
+from hei_fastapi_ddd.shared.exceptions.business import ConflictError, NotFoundError
 
 
 class ResourceRepository:

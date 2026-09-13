@@ -6,9 +6,24 @@
 from sqlalchemy import Select, delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from hei_fastapi_ddd.shared.config.enums import AccountType, StatusEnum
-from hei_fastapi_ddd.shared.exceptions.business import ConflictError, NotFoundError
-from hei_fastapi_ddd.contexts.iam.infrastructure.persistence.client_po import SysClientModule, SysClientResource
+from hei_fastapi_ddd.contexts.iam.application.reference_guard import (
+    ensure_not_self_or_descendant,
+    list_descendant_ids_many,
+)
+from hei_fastapi_ddd.contexts.iam.domain.enums import (
+    IamRelationSubjectType,
+    IamRelationTargetType,
+    IamRelationType,
+    ResourceType,
+)
+from hei_fastapi_ddd.contexts.iam.infrastructure.persistence.client_po import (
+    SysClientModule,
+    SysClientResource,
+)
+from hei_fastapi_ddd.contexts.iam.infrastructure.persistence.relation_po import SysIamRelation
+from hei_fastapi_ddd.contexts.iam.infrastructure.persistence.relation_repository import (
+    IamRelationRepository,
+)
 from hei_fastapi_ddd.contexts.iam.interfaces.http.client_schemas import (
     ClientModuleAdminPageQuery,
     ClientModuleCreateRequest,
@@ -18,23 +33,13 @@ from hei_fastapi_ddd.contexts.iam.interfaces.http.client_schemas import (
     ClientResourcePermissionBindRequest,
     ClientResourceUpdateRequest,
 )
-from hei_fastapi_ddd.contexts.iam.domain.enums import (
-    IamRelationSubjectType,
-    IamRelationTargetType,
-    IamRelationType,
-    ResourceType,
-)
-from hei_fastapi_ddd.contexts.iam.application.reference_guard import (
-    ensure_not_self_or_descendant,
-    list_descendant_ids_many,
-)
-from hei_fastapi_ddd.contexts.iam.infrastructure.persistence.relation_po import SysIamRelation
-from hei_fastapi_ddd.contexts.iam.infrastructure.persistence.relation_repository import IamRelationRepository
 from hei_fastapi_ddd.contexts.iam.interfaces.http.iam_schemas import (
     ResourceGrantMenuOption,
     ResourceGrantModuleOption,
     ResourcePermissionOption,
 )
+from hei_fastapi_ddd.shared.config.enums import AccountType, StatusEnum
+from hei_fastapi_ddd.shared.exceptions.business import ConflictError, NotFoundError
 
 
 class ClientModuleRepository:

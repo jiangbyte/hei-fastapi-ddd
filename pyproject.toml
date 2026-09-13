@@ -95,6 +95,7 @@ select = ["E", "F", "I", "B", "UP", "N"]
 ignore = [
   "E501",
   "B008",
+  "N818",  # DomainException 等为 DDD 惯用命名，不强制 Error 后缀
 ]
 
 [tool.ruff.lint.per-file-ignores]

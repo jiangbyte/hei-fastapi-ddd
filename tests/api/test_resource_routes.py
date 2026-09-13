@@ -2,12 +2,15 @@
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from hei_fastapi_ddd.shared.config.enums import AccountStatusEnum, AccountType
-from hei_fastapi_ddd.shared.security.session import SessionPayload, session_store
-from hei_fastapi_ddd.shared.deps.db import get_db_session
-from hei_fastapi_ddd.contexts.iam.infrastructure.persistence.account_po import SysAccount
 from hei_fastapi_ddd.contexts.iam.domain.enums import ResourceType
-from hei_fastapi_ddd.contexts.iam.infrastructure.persistence.resource_po import SysResource, SysResourceModule
+from hei_fastapi_ddd.contexts.iam.infrastructure.persistence.account_po import SysAccount
+from hei_fastapi_ddd.contexts.iam.infrastructure.persistence.resource_po import (
+    SysResource,
+    SysResourceModule,
+)
+from hei_fastapi_ddd.shared.config.enums import AccountStatusEnum, AccountType
+from hei_fastapi_ddd.shared.deps.db import get_db_session
+from hei_fastapi_ddd.shared.security.session import SessionPayload, session_store
 
 
 async def _seed_admin(client, token: str, permissions: list[str]) -> None:

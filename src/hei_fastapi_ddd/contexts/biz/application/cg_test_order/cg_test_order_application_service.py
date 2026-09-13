@@ -6,17 +6,6 @@ Author: Charlie
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from hei_fastapi_ddd.shared.audit import snapshots as audit_snapshots
-from hei_fastapi_ddd.shared.persistence.transaction import transactional
-from hei_fastapi_ddd.shared.web.pagination import PageData, build_page
-from hei_fastapi_ddd.shared.schema.base import (
-    IdQuery,
-    IdsRequest,
-    to_schema,
-    to_schema_list,
-)
-from hei_fastapi_ddd.shared.security.data_scope import build_data_scope_filter, default_owner_dept_id
-from hei_fastapi_ddd.shared.security.session import SessionPayload
 from hei_fastapi_ddd.contexts.biz.infrastructure.persistence.cg_test_order_po import CgTestOrder
 from hei_fastapi_ddd.contexts.biz.infrastructure.persistence.cg_test_order_repository import (
     CgTestOrderItemRepository,
@@ -32,6 +21,20 @@ from hei_fastapi_ddd.contexts.biz.interfaces.http.cg_test_order_schemas import (
     CgTestOrderSchema,
     CgTestOrderUpdateRequest,
 )
+from hei_fastapi_ddd.shared.audit import snapshots as audit_snapshots
+from hei_fastapi_ddd.shared.persistence.transaction import transactional
+from hei_fastapi_ddd.shared.schema.base import (
+    IdQuery,
+    IdsRequest,
+    to_schema,
+    to_schema_list,
+)
+from hei_fastapi_ddd.shared.security.data_scope import (
+    build_data_scope_filter,
+    default_owner_dept_id,
+)
+from hei_fastapi_ddd.shared.security.session import SessionPayload
+from hei_fastapi_ddd.shared.web.pagination import PageData, build_page
 
 
 class CgTestOrderService:

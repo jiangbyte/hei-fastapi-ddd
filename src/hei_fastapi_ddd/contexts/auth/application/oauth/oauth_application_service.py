@@ -13,37 +13,51 @@ from urllib.parse import urlencode
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from hei_fastapi_ddd.shared.audit import snapshots as audit_snapshots
-from hei_fastapi_ddd.shared.config.enums import AccountStatusEnum, AccountType
-from hei_fastapi_ddd.shared.config.reader import config_reader
-from hei_fastapi_ddd.shared.persistence.transaction import transactional
-from hei_fastapi_ddd.shared.exceptions.business import BusinessError
-from hei_fastapi_ddd.shared.schema.datetime import normalize_orm_datetimes
-from hei_fastapi_ddd.shared.security.password import hash_password_async
+from hei_fastapi_ddd.contexts.auth.application.auth_application_service import AuthService
 from hei_fastapi_ddd.contexts.auth.infrastructure.oauth.client import OauthClientFacade
-from hei_fastapi_ddd.contexts.auth.infrastructure.oauth.provider import WECHAT_FAMILY, OauthProvider, OauthUserProfile
-from hei_fastapi_ddd.contexts.auth.infrastructure.persistence.oauth_repository import AccountOauthBindingRepository
-from hei_fastapi_ddd.contexts.auth.interfaces.http.oauth_schemas import (
-    OauthBindingResult,
-    OauthProviderOptionSchema,
+from hei_fastapi_ddd.contexts.auth.infrastructure.oauth.provider import (
+    WECHAT_FAMILY,
+    OauthProvider,
+    OauthUserProfile,
 )
 from hei_fastapi_ddd.contexts.auth.infrastructure.oauth.stores import (
     OauthExchangeStore,
     OauthStatePayload,
     OauthStateStore,
 )
-from hei_fastapi_ddd.contexts.auth.application.auth_application_service import AuthService
+from hei_fastapi_ddd.contexts.auth.infrastructure.persistence.oauth_repository import (
+    AccountOauthBindingRepository,
+)
+from hei_fastapi_ddd.contexts.auth.interfaces.http.oauth_schemas import (
+    OauthBindingResult,
+    OauthProviderOptionSchema,
+)
+from hei_fastapi_ddd.contexts.iam.application.account.password_helper import (
+    validate_and_record_password,
+)
+from hei_fastapi_ddd.contexts.iam.application.api.account_api_adapter import (
+    AccountApiAdapter as AccountRepository,
+)
+from hei_fastapi_ddd.contexts.iam.domain.enums import AccountIdentityType
 from hei_fastapi_ddd.contexts.iam.infrastructure.persistence.account_po import SysAccount
-from hei_fastapi_ddd.contexts.iam.application.account.password_helper import validate_and_record_password
-from hei_fastapi_ddd.contexts.iam.application.api.account_api_adapter import AccountApiAdapter as AccountRepository
 from hei_fastapi_ddd.contexts.iam.interfaces.http.account_schemas import (
     AccountCreateRequest,
     AccountDeptAssignRequest,
     AccountRoleAssignRequest,
 )
-from hei_fastapi_ddd.contexts.iam.domain.enums import AccountIdentityType
-from hei_fastapi_ddd.contexts.profile.infrastructure.persistence.portal_repository import ProfileUserPortalRepository
-from hei_fastapi_ddd.contexts.profile.interfaces.http.portal_schemas import ProfileUserPortalUpsertPayload
+from hei_fastapi_ddd.contexts.profile.infrastructure.persistence.portal_repository import (
+    ProfileUserPortalRepository,
+)
+from hei_fastapi_ddd.contexts.profile.interfaces.http.portal_schemas import (
+    ProfileUserPortalUpsertPayload,
+)
+from hei_fastapi_ddd.shared.audit import snapshots as audit_snapshots
+from hei_fastapi_ddd.shared.config.enums import AccountStatusEnum, AccountType
+from hei_fastapi_ddd.shared.config.reader import config_reader
+from hei_fastapi_ddd.shared.exceptions.business import BusinessError
+from hei_fastapi_ddd.shared.persistence.transaction import transactional
+from hei_fastapi_ddd.shared.schema.datetime import normalize_orm_datetimes
+from hei_fastapi_ddd.shared.security.password import hash_password_async
 
 
 def _mask_open_id(open_id: str | None) -> str:

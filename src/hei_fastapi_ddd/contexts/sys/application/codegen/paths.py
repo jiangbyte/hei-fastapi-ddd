@@ -10,6 +10,7 @@ from functools import lru_cache
 from pathlib import Path, PurePosixPath
 
 from hei_fastapi_ddd.shared.config.settings import PROJECT_ROOT
+
 _DEFAULT_FRONTEND_REL = Path("..") / "hei-admin"
 
 

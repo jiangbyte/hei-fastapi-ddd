@@ -10,12 +10,15 @@ from datetime import UTC, datetime
 
 from sqlalchemy import or_, update
 
-from hei_fastapi_ddd.shared.redis.redis import get_redis
+from hei_fastapi_ddd.contexts.sys.application.banner.banner_application_service import (
+    flush_interaction_deltas,
+)
+from hei_fastapi_ddd.contexts.sys.application.job.registry import job_handler
+from hei_fastapi_ddd.contexts.sys.infrastructure.persistence.banner_po import SysBanner
 from hei_fastapi_ddd.shared.config.enums import StatusEnum
 from hei_fastapi_ddd.shared.persistence.session import get_session_factory
-from hei_fastapi_ddd.contexts.sys.infrastructure.persistence.banner_po import SysBanner
-from hei_fastapi_ddd.contexts.sys.application.banner.banner_application_service import flush_interaction_deltas
-from hei_fastapi_ddd.contexts.sys.application.job.registry import job_handler
+from hei_fastapi_ddd.shared.redis.redis import get_redis
+
 logger = logging.getLogger(__name__)
 
 

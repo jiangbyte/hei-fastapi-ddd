@@ -8,17 +8,19 @@ from typing import Annotated
 from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from hei_fastapi_ddd.shared.config.enums import AccountType
-from hei_fastapi_ddd.shared.web.schema import ApiResponse, success
-from hei_fastapi_ddd.shared.security.session import SessionPayload
-from hei_fastapi_ddd.shared.deps.auth import get_current_session, require_account_type
-from hei_fastapi_ddd.shared.deps.db import get_db_session
+from hei_fastapi_ddd.contexts.sys.application.workspace.workspace_application_service import (
+    WorkspaceService,
+)
 from hei_fastapi_ddd.contexts.sys.interfaces.http.workspace_schemas import (
     WorkspaceOverviewResponse,
     WorkspaceShortcutResult,
     WorkspaceShortcutSaveRequest,
 )
-from hei_fastapi_ddd.contexts.sys.application.workspace.workspace_application_service import WorkspaceService
+from hei_fastapi_ddd.shared.config.enums import AccountType
+from hei_fastapi_ddd.shared.deps.auth import get_current_session, require_account_type
+from hei_fastapi_ddd.shared.deps.db import get_db_session
+from hei_fastapi_ddd.shared.security.session import SessionPayload
+from hei_fastapi_ddd.shared.web.schema import ApiResponse, success
 
 router = APIRouter()
 

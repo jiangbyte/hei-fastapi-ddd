@@ -9,17 +9,24 @@ from sqlalchemy import Select, and_, delete, exists, func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.sql import ColumnElement
 
-from hei_fastapi_ddd.shared.persistence.batch import chunked
-from hei_fastapi_ddd.shared.persistence.compat import ci_like, json_array_contains, json_array_length
-from hei_fastapi_ddd.shared.exceptions.business import NotFoundError
-from hei_fastapi_ddd.shared.id_generator.snowflake import generate_snowflake_id
 from hei_fastapi_ddd.contexts.sys.domain.notice.enums import NoticeKind, NoticeStatus, TargetScope
-from hei_fastapi_ddd.contexts.sys.infrastructure.persistence.notice_po import SysNotice, SysNoticeRead
+from hei_fastapi_ddd.contexts.sys.infrastructure.persistence.notice_po import (
+    SysNotice,
+    SysNoticeRead,
+)
 from hei_fastapi_ddd.contexts.sys.interfaces.http.notice_schemas import (
     MyNoticePageQuery,
     SysNoticeAdminPageQuery,
     SysNoticeCreateRequest,
     SysNoticeUpdateRequest,
+)
+from hei_fastapi_ddd.shared.exceptions.business import NotFoundError
+from hei_fastapi_ddd.shared.id_generator.snowflake import generate_snowflake_id
+from hei_fastapi_ddd.shared.persistence.batch import chunked
+from hei_fastapi_ddd.shared.persistence.compat import (
+    ci_like,
+    json_array_contains,
+    json_array_length,
 )
 
 # 服务端维护字段：更新请求不可覆盖（对齐 hei-boot：viewCount/revokedAt/sender 由服务端维护）。

@@ -27,7 +27,7 @@ class DictTreeRecord(TypedDict):
     weight: int
     created_at: object
     updated_at: object
-    children: list["DictTreeRecord"]
+    children: list[DictTreeRecord]
 
 
 class DictRepository(Protocol):

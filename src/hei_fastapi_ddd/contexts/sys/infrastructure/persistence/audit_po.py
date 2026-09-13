@@ -8,8 +8,8 @@ from datetime import datetime
 from sqlalchemy import JSON, Boolean, DateTime, Index, Integer, String, Text, func
 from sqlalchemy.orm import Mapped, mapped_column
 
-from hei_fastapi_ddd.shared.persistence.base import Base
 from hei_fastapi_ddd.shared.id_generator.snowflake import generate_snowflake_id
+from hei_fastapi_ddd.shared.persistence.base import Base
 
 
 class SysOperationAuditLog(Base):

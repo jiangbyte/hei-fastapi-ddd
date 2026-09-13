@@ -10,16 +10,20 @@ from sqlalchemy import Select, delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.sql.elements import ColumnElement
 
-from hei_fastapi_ddd.shared.persistence.compat import like_contains
-from hei_fastapi_ddd.shared.exceptions.business import NotFoundError
-from hei_fastapi_ddd.contexts.iam.infrastructure.persistence.dept_po import SysDept
-from hei_fastapi_ddd.contexts.iam.interfaces.http.dept_schemas import DeptAdminPageQuery, DeptCreateRequest, DeptUpdateRequest
 from hei_fastapi_ddd.contexts.iam.application.reference_guard import (
     count_dept_references,
     ensure_not_self_or_descendant,
     ensure_parent_exists,
     raise_if_referenced,
 )
+from hei_fastapi_ddd.contexts.iam.infrastructure.persistence.dept_po import SysDept
+from hei_fastapi_ddd.contexts.iam.interfaces.http.dept_schemas import (
+    DeptAdminPageQuery,
+    DeptCreateRequest,
+    DeptUpdateRequest,
+)
+from hei_fastapi_ddd.shared.exceptions.business import NotFoundError
+from hei_fastapi_ddd.shared.persistence.compat import like_contains
 
 
 class DeptTreeRecord(TypedDict):
@@ -198,7 +202,9 @@ class DeptRepository:
         if not unique_ids:
             return {}
         from hei_fastapi_ddd.contexts.iam.infrastructure.persistence.account_po import SysAccount
-        from hei_fastapi_ddd.contexts.profile.infrastructure.persistence.admin_po import ProfileUserAdmin
+        from hei_fastapi_ddd.contexts.profile.infrastructure.persistence.admin_po import (
+            ProfileUserAdmin,
+        )
 
         stmt = (
             select(SysAccount.id, ProfileUserAdmin.nickname)

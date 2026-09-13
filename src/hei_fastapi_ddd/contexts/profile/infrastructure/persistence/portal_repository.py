@@ -7,7 +7,9 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from hei_fastapi_ddd.contexts.profile.infrastructure.persistence.portal_po import ProfileUserPortal
-from hei_fastapi_ddd.contexts.profile.interfaces.http.portal_schemas import ProfileUserPortalUpsertPayload
+from hei_fastapi_ddd.contexts.profile.interfaces.http.portal_schemas import (
+    ProfileUserPortalUpsertPayload,
+)
 
 
 class ProfileUserPortalRepository:

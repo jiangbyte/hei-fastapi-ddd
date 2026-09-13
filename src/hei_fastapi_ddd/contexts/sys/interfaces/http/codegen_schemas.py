@@ -8,9 +8,9 @@ from typing import Literal
 
 from pydantic import Field, field_serializer, field_validator, model_validator
 
-from hei_fastapi_ddd.shared.web.pagination import PageQuery
 from hei_fastapi_ddd.shared.schema.base import ApiSchema
 from hei_fastapi_ddd.shared.schema.wire import WireBool, WireInt
+from hei_fastapi_ddd.shared.web.pagination import PageQuery
 
 CodegenType = Literal["TABLE", "TREE", "LEFT_TREE_TABLE", "MASTER_DETAIL"]  # 生成类型
 CodegenTableRole = Literal["MAIN", "SUB"]  # 表角色：主表/子表

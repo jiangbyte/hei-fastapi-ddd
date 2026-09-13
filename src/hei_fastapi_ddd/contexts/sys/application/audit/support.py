@@ -7,8 +7,10 @@ from __future__ import annotations
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from hei_fastapi_ddd.contexts.iam.infrastructure.persistence.account_repository import AccountRepository
 from hei_fastapi_ddd.contexts.iam.domain.enums import AccountIdentityType
+from hei_fastapi_ddd.contexts.iam.infrastructure.persistence.account_repository import (
+    AccountRepository,
+)
 
 
 async def resolve_account_login(db: AsyncSession, account_id: str | None) -> str | None:

@@ -7,9 +7,9 @@ from sqlalchemy import BigInteger, String
 from sqlalchemy.orm import Mapped, mapped_column
 
 from hei_fastapi_ddd.shared.config.enums import StorageProvider
+from hei_fastapi_ddd.shared.id_generator.snowflake import generate_snowflake_id
 from hei_fastapi_ddd.shared.persistence.base import Base
 from hei_fastapi_ddd.shared.persistence.mixins import TimestampMixin
-from hei_fastapi_ddd.shared.id_generator.snowflake import generate_snowflake_id
 
 
 class SysFile(Base, TimestampMixin):

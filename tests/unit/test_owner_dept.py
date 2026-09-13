@@ -4,12 +4,16 @@ owner_dept_id 接线冒烟测试。
 """
 from pathlib import Path
 
+from hei_fastapi_ddd.contexts.biz.infrastructure.persistence.cg_test_activity_po import (
+    CgTestActivity,
+)
+from hei_fastapi_ddd.contexts.biz.infrastructure.persistence.cg_test_catalog_po import CgTestCatalog
+from hei_fastapi_ddd.contexts.biz.infrastructure.persistence.cg_test_knowledge_category_po import (
+    CgTestKnowledgeCategory,
+)
+from hei_fastapi_ddd.contexts.biz.infrastructure.persistence.cg_test_order_po import CgTestOrder
 from hei_fastapi_ddd.shared.persistence.mixins import OwnerDeptMixin
 from hei_fastapi_ddd.shared.security.data_scope import default_owner_dept_id
-from hei_fastapi_ddd.contexts.biz.infrastructure.persistence.cg_test_activity_po import CgTestActivity
-from hei_fastapi_ddd.contexts.biz.infrastructure.persistence.cg_test_catalog_po import CgTestCatalog
-from hei_fastapi_ddd.contexts.biz.infrastructure.persistence.cg_test_knowledge_category_po import CgTestKnowledgeCategory
-from hei_fastapi_ddd.contexts.biz.infrastructure.persistence.cg_test_order_po import CgTestOrder
 
 ROOT = Path(__file__).resolve().parents[2]
 

@@ -8,11 +8,11 @@ from datetime import datetime
 from sqlalchemy import Boolean, DateTime, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
+from hei_fastapi_ddd.contexts.iam.domain.enums import AccountIdentityBindStatus
 from hei_fastapi_ddd.shared.config.enums import AccountStatusEnum
+from hei_fastapi_ddd.shared.id_generator.snowflake import generate_snowflake_id
 from hei_fastapi_ddd.shared.persistence.base import Base
 from hei_fastapi_ddd.shared.persistence.mixins import TimestampMixin
-from hei_fastapi_ddd.shared.id_generator.snowflake import generate_snowflake_id
-from hei_fastapi_ddd.contexts.iam.domain.enums import AccountIdentityBindStatus
 
 
 class SysAccount(Base, TimestampMixin):

@@ -5,8 +5,6 @@
 
 from __future__ import annotations
 
-from sqlalchemy.ext.asyncio import AsyncSession
-
 from hei_fastapi_ddd.contexts.auth.application.session_service import AccountSessionService
 from hei_fastapi_ddd.shared.messaging import subscribe
 from hei_fastapi_ddd.shared.persistence.session import get_session_factory

@@ -8,14 +8,14 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, File, UploadFile
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from hei_fastapi_ddd.shared.config.enums import AccountType
-from hei_fastapi_ddd.shared.web.schema import ApiResponse, success
-from hei_fastapi_ddd.shared.security.session import SessionPayload
-from hei_fastapi_ddd.shared.security.transport import decrypt_passwords
-from hei_fastapi_ddd.shared.deps.auth import get_current_session, require_account_type
-from hei_fastapi_ddd.shared.deps.db import get_db_session
 from hei_fastapi_ddd.contexts.iam.application.account.query_service import AccountQueryService
-from hei_fastapi_ddd.contexts.iam.infrastructure.persistence.account_repository import AccountRepository
+from hei_fastapi_ddd.contexts.iam.infrastructure.persistence.account_repository import (
+    AccountRepository,
+)
+from hei_fastapi_ddd.contexts.profile.application.admin.admin_application_service import (
+    AVATAR_MAX_SIZE,
+    ProfileUserAdminService,
+)
 from hei_fastapi_ddd.contexts.profile.interfaces.http.admin_schemas import (
     AdminUserCenterAvatarUpdateResponse,
     AdminUserCenterEmailUpdateRequest,
@@ -25,8 +25,16 @@ from hei_fastapi_ddd.contexts.profile.interfaces.http.admin_schemas import (
     AdminUserCenterProfileUpdateRequest,
     ProfileUserAdminResponse,
 )
-from hei_fastapi_ddd.contexts.profile.application.admin.admin_application_service import AVATAR_MAX_SIZE, ProfileUserAdminService
-from hei_fastapi_ddd.contexts.profile.interfaces.http.profile_schemas import AdminMeResponse, BindTargetRequest
+from hei_fastapi_ddd.contexts.profile.interfaces.http.profile_schemas import (
+    AdminMeResponse,
+    BindTargetRequest,
+)
+from hei_fastapi_ddd.shared.config.enums import AccountType
+from hei_fastapi_ddd.shared.deps.auth import get_current_session, require_account_type
+from hei_fastapi_ddd.shared.deps.db import get_db_session
+from hei_fastapi_ddd.shared.security.session import SessionPayload
+from hei_fastapi_ddd.shared.security.transport import decrypt_passwords
+from hei_fastapi_ddd.shared.web.schema import ApiResponse, success
 
 router = APIRouter()
 
@@ -60,7 +68,9 @@ async def get_me(
         account_entity, AccountType.ADMIN
     )
     auth_service = AuthService(db)
-    from hei_fastapi_ddd.contexts.profile.application.identity.identity_application_service import ProfileIdentityService
+    from hei_fastapi_ddd.contexts.profile.application.identity.identity_application_service import (
+        ProfileIdentityService,
+    )
 
     identity = await ProfileIdentityService(db).get_user_status_for_account(session.account_id)
     return success(
@@ -148,7 +158,9 @@ async def send_user_center_password_code(
 ) -> ApiResponse[None]:
     """向当前管理端账户发送改密验证码。"""
     from hei_fastapi_ddd.contexts.auth.application.password_change import send_change_password_code
-    from hei_fastapi_ddd.contexts.iam.infrastructure.persistence.account_repository import AccountRepository
+    from hei_fastapi_ddd.contexts.iam.infrastructure.persistence.account_repository import (
+        AccountRepository,
+    )
 
     account = await AccountRepository(db).get_required(session.account_id)
     await send_change_password_code(

@@ -9,21 +9,17 @@ from uuid import uuid4
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from hei_fastapi_ddd.shared.audit import snapshots as audit_snapshots
-from hei_fastapi_ddd.shared.config.enums import AccountType
-from hei_fastapi_ddd.shared.persistence.transaction import transactional
-from hei_fastapi_ddd.shared.exceptions.business import AuthenticationError, BusinessError
-from hei_fastapi_ddd.shared.schema.common_schema import IdNameResponse
-from hei_fastapi_ddd.shared.security.password import hash_password_async, verify_password_async
-from hei_fastapi_ddd.shared.security.session import SessionPayload
-from hei_fastapi_ddd.shared.storage.url import is_external_url, normalize_object_name
 from hei_fastapi_ddd.contexts.auth.application.session_service import AccountSessionService
-from hei_fastapi_ddd.contexts.iam.infrastructure.persistence.account_repository import AccountRepository
-from hei_fastapi_ddd.contexts.iam.infrastructure.persistence.dept_repository import DeptRepository
 from hei_fastapi_ddd.contexts.iam.domain.enums import AccountIdentityType
+from hei_fastapi_ddd.contexts.iam.infrastructure.persistence.account_repository import (
+    AccountRepository,
+)
+from hei_fastapi_ddd.contexts.iam.infrastructure.persistence.dept_repository import DeptRepository
 from hei_fastapi_ddd.contexts.iam.infrastructure.persistence.group_repository import GroupRepository
 from hei_fastapi_ddd.contexts.iam.infrastructure.persistence.role_repository import RoleRepository
-from hei_fastapi_ddd.contexts.profile.infrastructure.persistence.admin_repository import ProfileUserAdminRepository
+from hei_fastapi_ddd.contexts.profile.infrastructure.persistence.admin_repository import (
+    ProfileUserAdminRepository,
+)
 from hei_fastapi_ddd.contexts.profile.interfaces.http.admin_schemas import (
     AdminUserCenterAvatarUpdateResponse,
     AdminUserCenterEmailUpdateRequest,
@@ -33,8 +29,16 @@ from hei_fastapi_ddd.contexts.profile.interfaces.http.admin_schemas import (
     AdminUserCenterProfileUpdateRequest,
     ProfileUserAdminUpsertPayload,
 )
-from hei_fastapi_ddd.contexts.sys.interfaces.http.file_schemas import FileUploadRequest
 from hei_fastapi_ddd.contexts.sys.application.file.file_application_service import FileService
+from hei_fastapi_ddd.contexts.sys.interfaces.http.file_schemas import FileUploadRequest
+from hei_fastapi_ddd.shared.audit import snapshots as audit_snapshots
+from hei_fastapi_ddd.shared.config.enums import AccountType
+from hei_fastapi_ddd.shared.exceptions.business import AuthenticationError, BusinessError
+from hei_fastapi_ddd.shared.persistence.transaction import transactional
+from hei_fastapi_ddd.shared.schema.common_schema import IdNameResponse
+from hei_fastapi_ddd.shared.security.password import hash_password_async, verify_password_async
+from hei_fastapi_ddd.shared.security.session import SessionPayload
+from hei_fastapi_ddd.shared.storage.url import is_external_url, normalize_object_name
 
 AVATAR_MAX_SIZE = 2 * 1024 * 1024  # 头像文件大小上限（2MB）
 AVATAR_CONTENT_TYPES = {  # 允许的头像内容类型及其扩展名
@@ -154,9 +158,11 @@ class ProfileUserAdminService:
         session: SessionPayload,
     ) -> None:
         """校验旧密码/验证码后修改密码，并刷新账户会话。"""
-        from hei_fastapi_ddd.shared.config.enums import AccountType
         from hei_fastapi_ddd.contexts.auth.application.password_change import verify_change_password
-        from hei_fastapi_ddd.contexts.iam.application.account.password_helper import validate_and_record_password
+        from hei_fastapi_ddd.contexts.iam.application.account.password_helper import (
+            validate_and_record_password,
+        )
+        from hei_fastapi_ddd.shared.config.enums import AccountType
 
         account = await self.account_repo.get_required(session.account_id)
         profile = await self.repo.get_by_account_id(session.account_id)

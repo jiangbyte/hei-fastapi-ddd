@@ -4,12 +4,15 @@ import uuid
 
 from sqlalchemy import select
 
-from hei_fastapi_ddd.shared.config.enums import AccountType, DataScope
-from hei_fastapi_ddd.shared.security.data_scope import build_data_scope_filter, list_dept_and_child_ids
-from hei_fastapi_ddd.shared.security.session import SessionPayload
-from hei_fastapi_ddd.contexts.iam.infrastructure.persistence.dept_po import SysDept
 from hei_fastapi_ddd.contexts.iam.domain.enums import IamRelationType
+from hei_fastapi_ddd.contexts.iam.infrastructure.persistence.dept_po import SysDept
 from hei_fastapi_ddd.contexts.iam.infrastructure.persistence.relation_po import SysIamRelation
+from hei_fastapi_ddd.shared.config.enums import AccountType, DataScope
+from hei_fastapi_ddd.shared.security.data_scope import (
+    build_data_scope_filter,
+    list_dept_and_child_ids,
+)
+from hei_fastapi_ddd.shared.security.session import SessionPayload
 from tests.iam_relation_helpers import account_dept
 
 

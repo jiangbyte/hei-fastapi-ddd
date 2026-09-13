@@ -12,7 +12,9 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from hei_fastapi_ddd.contexts.iam.application.account.query_service import AccountQueryService
-from hei_fastapi_ddd.contexts.iam.infrastructure.persistence.account_repository import AccountRepository
+from hei_fastapi_ddd.contexts.iam.infrastructure.persistence.account_repository import (
+    AccountRepository,
+)
 from hei_fastapi_ddd.contexts.iam.infrastructure.persistence.client_po import SysClientResource
 from hei_fastapi_ddd.contexts.iam.infrastructure.persistence.dept_repository import DeptRepository
 from hei_fastapi_ddd.contexts.iam.infrastructure.persistence.group_repository import GroupRepository

@@ -5,8 +5,6 @@
 
 from __future__ import annotations
 
-from typing import TypedDict
-
 from sqlalchemy import Select, delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 

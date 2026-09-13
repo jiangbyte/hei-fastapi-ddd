@@ -15,9 +15,9 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from threading import Thread
 
-from hei_fastapi_ddd.shared.redis.redis import get_redis
 from hei_fastapi_ddd.shared.config.reader import config_reader
 from hei_fastapi_ddd.shared.config.settings import settings
+from hei_fastapi_ddd.shared.redis.redis import get_redis
 
 logger = logging.getLogger(__name__)
 

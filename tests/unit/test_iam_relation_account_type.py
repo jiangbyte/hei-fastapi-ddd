@@ -2,12 +2,14 @@
 
 import pytest
 
+from hei_fastapi_ddd.contexts.iam.domain.enums import RoleScopeType
+from hei_fastapi_ddd.contexts.iam.infrastructure.persistence.account_po import SysAccount
+from hei_fastapi_ddd.contexts.iam.infrastructure.persistence.relation_repository import (
+    IamRelationRepository,
+)
+from hei_fastapi_ddd.contexts.iam.infrastructure.persistence.role_po import SysRole
 from hei_fastapi_ddd.shared.config.enums import AccountStatusEnum, AccountType
 from hei_fastapi_ddd.shared.security.password import hash_password
-from hei_fastapi_ddd.contexts.iam.infrastructure.persistence.account_po import SysAccount
-from hei_fastapi_ddd.contexts.iam.domain.enums import RoleScopeType
-from hei_fastapi_ddd.contexts.iam.infrastructure.persistence.relation_repository import IamRelationRepository
-from hei_fastapi_ddd.contexts.iam.infrastructure.persistence.role_po import SysRole
 from tests.iam_relation_helpers import account_role
 
 

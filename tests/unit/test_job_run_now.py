@@ -5,9 +5,9 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
+from hei_fastapi_ddd.contexts.sys.application.job.job_application_service import JobService
 from hei_fastapi_ddd.shared.exceptions.business import BusinessError
 from hei_fastapi_ddd.shared.schema.base import IdQuery
-from hei_fastapi_ddd.contexts.sys.application.job.job_application_service import JobService
 
 
 @pytest.mark.asyncio

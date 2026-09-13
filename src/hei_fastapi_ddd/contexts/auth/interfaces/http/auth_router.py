@@ -8,26 +8,10 @@ from typing import Annotated
 from fastapi import APIRouter, Body, Depends, Header, Request, Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from hei_fastapi_ddd.shared.config.enums import AccountType
-from hei_fastapi_ddd.shared.exceptions.business import BusinessError
-from hei_fastapi_ddd.shared.network.client_ip import get_client_ip
-from hei_fastapi_ddd.shared.web.schema import ApiResponse, success
-from hei_fastapi_ddd.shared.security.session import SessionPayload
-from hei_fastapi_ddd.shared.security.session_token import (
-    clear_session_cookie,
-    extract_session_token,
-    set_session_cookie,
+from hei_fastapi_ddd.contexts.auth.application.auth_application_service import (
+    AuthService,
+    session_expires_in,
 )
-from hei_fastapi_ddd.shared.security.transport import (
-    CaptchaApiResponse,
-    PasswordKeyApiResponse,
-    create_captcha,
-    create_password_key,
-    decrypt_password,
-    verify_captcha,
-)
-from hei_fastapi_ddd.shared.deps.auth import get_current_session, require_account_type
-from hei_fastapi_ddd.shared.deps.db import get_db_session
 from hei_fastapi_ddd.contexts.auth.domain.policy import get_auth_options, get_register_policy
 from hei_fastapi_ddd.contexts.auth.interfaces.http.auth_schemas import (
     AuthOptionsApiResponse,
@@ -49,8 +33,27 @@ from hei_fastapi_ddd.contexts.auth.interfaces.http.auth_schemas import (
     SendLoginCodeRequest,
     SendRegisterCodeRequest,
 )
-from hei_fastapi_ddd.contexts.auth.application.auth_application_service import AuthService, session_expires_in
 from hei_fastapi_ddd.contexts.sys.application.public.site_footer import resolve_site_footer
+from hei_fastapi_ddd.shared.config.enums import AccountType
+from hei_fastapi_ddd.shared.deps.auth import get_current_session, require_account_type
+from hei_fastapi_ddd.shared.deps.db import get_db_session
+from hei_fastapi_ddd.shared.exceptions.business import BusinessError
+from hei_fastapi_ddd.shared.network.client_ip import get_client_ip
+from hei_fastapi_ddd.shared.security.session import SessionPayload
+from hei_fastapi_ddd.shared.security.session_token import (
+    clear_session_cookie,
+    extract_session_token,
+    set_session_cookie,
+)
+from hei_fastapi_ddd.shared.security.transport import (
+    CaptchaApiResponse,
+    PasswordKeyApiResponse,
+    create_captcha,
+    create_password_key,
+    decrypt_password,
+    verify_captcha,
+)
+from hei_fastapi_ddd.shared.web.schema import ApiResponse, success
 
 admin_router = APIRouter()
 portal_router = APIRouter()
@@ -70,7 +73,9 @@ async def portal_auth_options() -> AuthOptionsApiResponse:
 
 def _auth_options_response(account_type: AccountType) -> AuthOptionsResponse:
     """将登录策略转换为对外的 AuthOptions 响应模型。"""
-    from hei_fastapi_ddd.contexts.auth.interfaces.http.oauth_schemas import OauthProviderOptionSchema
+    from hei_fastapi_ddd.contexts.auth.interfaces.http.oauth_schemas import (
+        OauthProviderOptionSchema,
+    )
 
     opts = get_auth_options(account_type)
     return AuthOptionsResponse(

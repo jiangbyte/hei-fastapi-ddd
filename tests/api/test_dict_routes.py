@@ -1,10 +1,10 @@
 """ Author: Charlie """
 
-from hei_fastapi_ddd.shared.config.enums import AccountStatusEnum, AccountType
-from hei_fastapi_ddd.shared.security.session import SessionPayload, session_store
-from hei_fastapi_ddd.shared.deps.db import get_db_session
 from hei_fastapi_ddd.contexts.iam.infrastructure.persistence.account_po import SysAccount
 from hei_fastapi_ddd.contexts.sys.infrastructure.persistence.dict_po import SysDict
+from hei_fastapi_ddd.shared.config.enums import AccountStatusEnum, AccountType
+from hei_fastapi_ddd.shared.deps.db import get_db_session
+from hei_fastapi_ddd.shared.security.session import SessionPayload, session_store
 
 
 async def _seed_admin(client, token: str, permissions: list[str]) -> str:

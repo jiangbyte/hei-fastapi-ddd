@@ -9,17 +9,11 @@ from redis.asyncio import Redis
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from hei_fastapi_ddd.shared.audit import snapshots as audit_snapshots
-from hei_fastapi_ddd.shared.redis.keys import banner_interaction_delta_key
-from hei_fastapi_ddd.shared.redis.redis import get_redis
-from hei_fastapi_ddd.shared.config.enums import AccountType
-from hei_fastapi_ddd.shared.persistence.transaction import transactional
-from hei_fastapi_ddd.shared.exceptions.business import BusinessError, NotFoundError
-from hei_fastapi_ddd.shared.web.pagination import PageData, build_page
-from hei_fastapi_ddd.shared.schema.base import IdQuery, IdsRequest, to_schema, to_schema_list
-from hei_fastapi_ddd.shared.storage.url import normalize_object_name
+from hei_fastapi_ddd.contexts.sys.application.file.file_application_service import FileService
 from hei_fastapi_ddd.contexts.sys.infrastructure.persistence.banner_po import SysBanner
-from hei_fastapi_ddd.contexts.sys.infrastructure.persistence.banner_repository import BannerRepository
+from hei_fastapi_ddd.contexts.sys.infrastructure.persistence.banner_repository import (
+    BannerRepository,
+)
 from hei_fastapi_ddd.contexts.sys.interfaces.http.banner_schemas import (
     BannerAdminPageQuery,
     BannerCreateRequest,
@@ -27,7 +21,15 @@ from hei_fastapi_ddd.contexts.sys.interfaces.http.banner_schemas import (
     BannerUpdateRequest,
     SysBannerSchema,
 )
-from hei_fastapi_ddd.contexts.sys.application.file.file_application_service import FileService
+from hei_fastapi_ddd.shared.audit import snapshots as audit_snapshots
+from hei_fastapi_ddd.shared.config.enums import AccountType
+from hei_fastapi_ddd.shared.exceptions.business import BusinessError, NotFoundError
+from hei_fastapi_ddd.shared.persistence.transaction import transactional
+from hei_fastapi_ddd.shared.redis.keys import banner_interaction_delta_key
+from hei_fastapi_ddd.shared.redis.redis import get_redis
+from hei_fastapi_ddd.shared.schema.base import IdQuery, IdsRequest, to_schema, to_schema_list
+from hei_fastapi_ddd.shared.storage.url import normalize_object_name
+from hei_fastapi_ddd.shared.web.pagination import PageData, build_page
 
 
 class BannerService:

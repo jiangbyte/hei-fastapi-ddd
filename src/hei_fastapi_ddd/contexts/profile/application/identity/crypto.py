@@ -13,6 +13,7 @@ from cryptography.fernet import Fernet
 
 from hei_fastapi_ddd.shared.config.settings import settings
 from hei_fastapi_ddd.shared.secrets.backend import _normalize_fernet_token
+
 logger = logging.getLogger(__name__)
 
 

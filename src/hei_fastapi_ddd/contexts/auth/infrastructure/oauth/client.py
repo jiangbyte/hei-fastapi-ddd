@@ -13,11 +13,16 @@ from urllib.parse import urlencode
 import httpx
 from authlib.integrations.httpx_client import AsyncOAuth2Client
 
+from hei_fastapi_ddd.contexts.auth.infrastructure.oauth.provider import (
+    OauthProvider,
+    OauthUserProfile,
+)
 from hei_fastapi_ddd.shared.config.enums import AccountType
 from hei_fastapi_ddd.shared.config.reader import config_reader
 from hei_fastapi_ddd.shared.exceptions.business import BusinessError
 from hei_fastapi_ddd.shared.http.client import get_http_client
-from hei_fastapi_ddd.contexts.auth.infrastructure.oauth.provider import OauthProvider, OauthUserProfile
+
+
 def oauth_config_key(account_type: AccountType, provider: OauthProvider, field: str) -> str:
     """构造 AUTH_OAUTH_{ACCOUNT_TYPE}_{PROVIDER}_{FIELD} 配置键。"""
     return f"AUTH_OAUTH_{account_type.value}_{provider.value}_{field}"

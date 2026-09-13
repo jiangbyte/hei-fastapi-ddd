@@ -10,9 +10,9 @@ from typing import Any
 from sqlalchemy import JSON, Boolean, DateTime, Integer, Numeric, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
+from hei_fastapi_ddd.shared.id_generator.snowflake import generate_snowflake_id
 from hei_fastapi_ddd.shared.persistence.base import Base
 from hei_fastapi_ddd.shared.persistence.mixins import OwnerDeptMixin, TimestampMixin
-from hei_fastapi_ddd.shared.id_generator.snowflake import generate_snowflake_id
 
 
 class CgTestOrder(Base, TimestampMixin, OwnerDeptMixin):

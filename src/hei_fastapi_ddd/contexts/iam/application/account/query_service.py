@@ -5,20 +5,28 @@
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from hei_fastapi_ddd.shared.config.enums import AccountType
-from hei_fastapi_ddd.shared.schema.datetime import normalize_orm_datetimes
-from hei_fastapi_ddd.contexts.auth.infrastructure.persistence.oauth_repository import AccountOauthBindingRepository
-from hei_fastapi_ddd.contexts.iam.infrastructure.persistence.account_repository import AccountRepository
+from hei_fastapi_ddd.contexts.auth.infrastructure.persistence.oauth_repository import (
+    AccountOauthBindingRepository,
+)
 from hei_fastapi_ddd.contexts.iam.domain.enums import AccountIdentityBindStatus
+from hei_fastapi_ddd.contexts.iam.infrastructure.persistence.account_repository import (
+    AccountRepository,
+)
 from hei_fastapi_ddd.contexts.iam.interfaces.http.iam_schemas import (
     AccountIdentitySchema,
     AccountOauthBindingSchema,
     SysAccountListSchema,
     SysAccountSchema,
 )
-from hei_fastapi_ddd.contexts.profile.infrastructure.persistence.admin_repository import ProfileUserAdminRepository
-from hei_fastapi_ddd.contexts.profile.infrastructure.persistence.portal_repository import ProfileUserPortalRepository
+from hei_fastapi_ddd.contexts.profile.infrastructure.persistence.admin_repository import (
+    ProfileUserAdminRepository,
+)
+from hei_fastapi_ddd.contexts.profile.infrastructure.persistence.portal_repository import (
+    ProfileUserPortalRepository,
+)
 from hei_fastapi_ddd.contexts.sys.application.file.file_application_service import FileService
+from hei_fastapi_ddd.shared.config.enums import AccountType
+from hei_fastapi_ddd.shared.schema.datetime import normalize_orm_datetimes
 
 
 class AccountQueryService:

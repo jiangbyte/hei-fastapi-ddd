@@ -3,6 +3,11 @@
 登录保护：基于 Redis 统计账户与 IP 的失败次数并触发限流锁定。
 """
 
+from hei_fastapi_ddd.contexts.auth.domain.policy import get_login_policy
+from hei_fastapi_ddd.shared.config.enums import AccountType
+from hei_fastapi_ddd.shared.config.settings import settings
+from hei_fastapi_ddd.shared.exceptions.business import AuthenticationError
+from hei_fastapi_ddd.shared.observability.metrics import record_login_lock
 from hei_fastapi_ddd.shared.redis.keys import (
     login_failure_account_key,
     login_failure_ip_key,
@@ -10,11 +15,6 @@ from hei_fastapi_ddd.shared.redis.keys import (
     login_lock_ip_key,
 )
 from hei_fastapi_ddd.shared.redis.redis import get_redis
-from hei_fastapi_ddd.shared.config.enums import AccountType
-from hei_fastapi_ddd.shared.config.settings import settings
-from hei_fastapi_ddd.shared.exceptions.business import AuthenticationError
-from hei_fastapi_ddd.shared.observability.metrics import record_login_lock
-from hei_fastapi_ddd.contexts.auth.domain.policy import get_login_policy
 
 
 class LoginProtectionService:

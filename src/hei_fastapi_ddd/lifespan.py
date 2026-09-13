@@ -11,7 +11,10 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 
-from hei_fastapi_ddd.shared.audit.queue import start_operation_audit_queue, stop_operation_audit_queue
+from hei_fastapi_ddd.shared.audit.queue import (
+    start_operation_audit_queue,
+    stop_operation_audit_queue,
+)
 from hei_fastapi_ddd.shared.config.apply import apply_all_config
 from hei_fastapi_ddd.shared.config.reader import config_reader
 from hei_fastapi_ddd.shared.config.sync import start_config_sync_listener, stop_config_sync_listener

@@ -19,6 +19,15 @@ jobs:
             extras: "[dev,mysql]"
             db_url: "mysql+aiomysql://root:root@127.0.0.1:3306/hei_fastapi_test"
     services:
+      redis:
+        image: redis:7
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
       postgres:
         image: postgres:16
         env:

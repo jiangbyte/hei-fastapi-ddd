@@ -6,23 +6,27 @@
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from hei_fastapi_ddd.shared.audit import snapshots as audit_snapshots
-from hei_fastapi_ddd.shared.persistence.transaction import transactional
-from hei_fastapi_ddd.shared.exceptions.business import BusinessError
-from hei_fastapi_ddd.shared.schema.base import to_schema_list
-from hei_fastapi_ddd.shared.security.session import SessionPayload
-from hei_fastapi_ddd.contexts.iam.infrastructure.persistence.resource_po import SysResource
 from hei_fastapi_ddd.contexts.iam.domain.role.constants import SUPER_ADMIN_ROLE_CODE
+from hei_fastapi_ddd.contexts.iam.infrastructure.persistence.resource_po import SysResource
 from hei_fastapi_ddd.contexts.iam.infrastructure.persistence.role_po import SysRole
 from hei_fastapi_ddd.contexts.sys.infrastructure.persistence.audit_po import SysOperationAuditLog
-from hei_fastapi_ddd.contexts.sys.infrastructure.persistence.workspace_po import SysWorkspaceShortcut
-from hei_fastapi_ddd.contexts.sys.infrastructure.persistence.workspace_repository import WorkspaceShortcutRepository
+from hei_fastapi_ddd.contexts.sys.infrastructure.persistence.workspace_po import (
+    SysWorkspaceShortcut,
+)
+from hei_fastapi_ddd.contexts.sys.infrastructure.persistence.workspace_repository import (
+    WorkspaceShortcutRepository,
+)
 from hei_fastapi_ddd.contexts.sys.interfaces.http.workspace_schemas import (
     WorkspaceActivityItem,
     WorkspaceOverviewResponse,
     WorkspaceShortcutResult,
     WorkspaceShortcutSaveRequest,
 )
+from hei_fastapi_ddd.shared.audit import snapshots as audit_snapshots
+from hei_fastapi_ddd.shared.exceptions.business import BusinessError
+from hei_fastapi_ddd.shared.persistence.transaction import transactional
+from hei_fastapi_ddd.shared.schema.base import to_schema_list
+from hei_fastapi_ddd.shared.security.session import SessionPayload
 
 MAX_SHORTCUTS = 16
 HOME_CODE = "sys-workspace"

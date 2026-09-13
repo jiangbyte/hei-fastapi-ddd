@@ -7,7 +7,9 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from hei_fastapi_ddd.contexts.profile.infrastructure.persistence.admin_po import ProfileUserAdmin
-from hei_fastapi_ddd.contexts.profile.interfaces.http.admin_schemas import ProfileUserAdminUpsertPayload
+from hei_fastapi_ddd.contexts.profile.interfaces.http.admin_schemas import (
+    ProfileUserAdminUpsertPayload,
+)
 
 
 class ProfileUserAdminRepository:

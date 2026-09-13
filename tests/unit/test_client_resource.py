@@ -2,13 +2,21 @@
 
 import uuid
 
-from hei_fastapi_ddd.shared.config.enums import AccountType, StatusEnum
-from hei_fastapi_ddd.contexts.iam.infrastructure.persistence.client_po import SysClientModule, SysClientResource
-from hei_fastapi_ddd.contexts.iam.interfaces.http.client_schemas import ClientModuleSelectorQuery
-from hei_fastapi_ddd.contexts.iam.application.client.client_application_service import ClientModuleService, ClientResourceService
+from hei_fastapi_ddd.contexts.iam.application.client.client_application_service import (
+    ClientModuleService,
+    ClientResourceService,
+)
 from hei_fastapi_ddd.contexts.iam.domain.enums import GrantSubjectType, ResourceType
-from hei_fastapi_ddd.contexts.iam.infrastructure.persistence.relation_repository import IamRelationRepository
+from hei_fastapi_ddd.contexts.iam.infrastructure.persistence.client_po import (
+    SysClientModule,
+    SysClientResource,
+)
+from hei_fastapi_ddd.contexts.iam.infrastructure.persistence.relation_repository import (
+    IamRelationRepository,
+)
 from hei_fastapi_ddd.contexts.iam.infrastructure.persistence.role_po import SysRole
+from hei_fastapi_ddd.contexts.iam.interfaces.http.client_schemas import ClientModuleSelectorQuery
+from hei_fastapi_ddd.shared.config.enums import AccountType, StatusEnum
 
 
 async def test_client_module_selector_filters_by_account_type(db_session):

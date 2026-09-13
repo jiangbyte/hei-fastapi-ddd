@@ -9,25 +9,29 @@ from typing import Annotated
 from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from hei_fastapi_ddd.shared.config.enums import AccountType
-from hei_fastapi_ddd.shared.web.pagination import PageData
-from hei_fastapi_ddd.shared.web.schema import ApiResponse, success
-from hei_fastapi_ddd.shared.schema.base import (
-    IdQuery,
-    IdsRequest,
+from hei_fastapi_ddd.contexts.biz.application.cg_test_activity.cg_test_activity_application_service import (
+    CgTestActivityService,
 )
-from hei_fastapi_ddd.shared.security.session import SessionPayload
-from hei_fastapi_ddd.shared.deps.auth import get_current_session, require_account_type, require_permission
-from hei_fastapi_ddd.shared.deps.db import get_db_session
 from hei_fastapi_ddd.contexts.biz.interfaces.http.cg_test_activity_schemas import (
     CgTestActivityAdminPageQuery,
     CgTestActivityCreateRequest,
     CgTestActivitySchema,
     CgTestActivityUpdateRequest,
 )
-from hei_fastapi_ddd.contexts.biz.application.cg_test_activity.cg_test_activity_application_service import (
-    CgTestActivityService,
+from hei_fastapi_ddd.shared.config.enums import AccountType
+from hei_fastapi_ddd.shared.deps.auth import (
+    get_current_session,
+    require_account_type,
+    require_permission,
 )
+from hei_fastapi_ddd.shared.deps.db import get_db_session
+from hei_fastapi_ddd.shared.schema.base import (
+    IdQuery,
+    IdsRequest,
+)
+from hei_fastapi_ddd.shared.security.session import SessionPayload
+from hei_fastapi_ddd.shared.web.pagination import PageData
+from hei_fastapi_ddd.shared.web.schema import ApiResponse, success
 
 router = APIRouter()
 

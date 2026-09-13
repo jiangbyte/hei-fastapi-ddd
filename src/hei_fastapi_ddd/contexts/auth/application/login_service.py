@@ -8,45 +8,51 @@ from __future__ import annotations
 import secrets
 from uuid import uuid4
 
+from hei_fastapi_ddd.contexts.auth.application.base import _audit_record, session_expires_in
+from hei_fastapi_ddd.contexts.auth.application.protection import login_protection_service
+from hei_fastapi_ddd.contexts.auth.domain.policy import (
+    ensure_identity_allowed,
+    no_user_policy_for,
+)
+from hei_fastapi_ddd.contexts.auth.interfaces.http.auth_schemas import (
+    LoginPayload,
+    LoginResponse,
+)
+from hei_fastapi_ddd.contexts.iam.application.account.password_helper import (
+    get_password_age_days,
+    is_password_expired,
+)
+from hei_fastapi_ddd.contexts.iam.domain.enums import AccountIdentityType
+from hei_fastapi_ddd.contexts.iam.infrastructure.persistence.account_po import SysAccount
+from hei_fastapi_ddd.contexts.iam.interfaces.http.account_schemas import (
+    AccountCreateRequest,
+)
+from hei_fastapi_ddd.contexts.profile.infrastructure.persistence.portal_repository import (
+    ProfileUserPortalRepository,
+)
+from hei_fastapi_ddd.contexts.profile.interfaces.http.portal_schemas import (
+    ProfileUserPortalUpsertPayload,
+)
+from hei_fastapi_ddd.contexts.sys.application.audit.audit_application_service import (
+    OperationAuditService,
+)
 from hei_fastapi_ddd.shared.audit import snapshots as audit_snapshots
+from hei_fastapi_ddd.shared.config.enums import AccountStatusEnum, AccountType
+from hei_fastapi_ddd.shared.config.reader import config_reader
+from hei_fastapi_ddd.shared.config.settings import settings
+from hei_fastapi_ddd.shared.email.sender import send_templated_mail
+from hei_fastapi_ddd.shared.exceptions.business import AuthenticationError, BusinessError
+from hei_fastapi_ddd.shared.observability.metrics import record_login_attempt
+from hei_fastapi_ddd.shared.persistence.transaction import transactional
 from hei_fastapi_ddd.shared.redis.keys import (
     login_otp_key,
     password_expiry_notify_key,
 )
 from hei_fastapi_ddd.shared.redis.redis import get_redis
-from hei_fastapi_ddd.shared.config.enums import AccountStatusEnum, AccountType
-from hei_fastapi_ddd.shared.config.reader import config_reader
-from hei_fastapi_ddd.shared.config.settings import settings
-from hei_fastapi_ddd.shared.persistence.transaction import transactional
-from hei_fastapi_ddd.shared.email.sender import send_templated_mail
-from hei_fastapi_ddd.shared.exceptions.business import AuthenticationError, BusinessError
-from hei_fastapi_ddd.shared.observability.metrics import record_login_attempt
 from hei_fastapi_ddd.shared.security.password import hash_password_async
 from hei_fastapi_ddd.shared.security.session import SessionPayload, session_store
 from hei_fastapi_ddd.shared.security.token import generate_token
 from hei_fastapi_ddd.shared.sms.sender import send_templated_sms
-from hei_fastapi_ddd.contexts.auth.application.base import _audit_record, session_expires_in
-from hei_fastapi_ddd.contexts.auth.domain.policy import (
-    ensure_identity_allowed,
-    no_user_policy_for,
-)
-from hei_fastapi_ddd.contexts.auth.application.protection import login_protection_service
-from hei_fastapi_ddd.contexts.auth.interfaces.http.auth_schemas import (
-    LoginPayload,
-    LoginResponse,
-)
-from hei_fastapi_ddd.contexts.iam.infrastructure.persistence.account_po import SysAccount
-from hei_fastapi_ddd.contexts.iam.application.account.password_helper import (
-    get_password_age_days,
-    is_password_expired,
-)
-from hei_fastapi_ddd.contexts.iam.interfaces.http.account_schemas import (
-    AccountCreateRequest,
-)
-from hei_fastapi_ddd.contexts.iam.domain.enums import AccountIdentityType
-from hei_fastapi_ddd.contexts.profile.infrastructure.persistence.portal_repository import ProfileUserPortalRepository
-from hei_fastapi_ddd.contexts.profile.interfaces.http.portal_schemas import ProfileUserPortalUpsertPayload
-from hei_fastapi_ddd.contexts.sys.application.audit.audit_application_service import OperationAuditService
 
 
 class LoginMixin:
@@ -358,7 +364,9 @@ class LoginMixin:
         type_name = account_type.value
         if not config_reader.get_bool(f"AUTH_FORCE_BIND_{type_name}_IDENTITY", False):
             return False
-        from hei_fastapi_ddd.contexts.profile.application.identity.identity_application_service import ProfileIdentityService
+        from hei_fastapi_ddd.contexts.profile.application.identity.identity_application_service import (
+            ProfileIdentityService,
+        )
 
         return not await ProfileIdentityService(self.db).is_verified(account_id)
 

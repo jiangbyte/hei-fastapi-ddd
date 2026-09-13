@@ -8,9 +8,6 @@ from sqlalchemy import Select, delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.sql.elements import ColumnElement
 
-from hei_fastapi_ddd.shared.persistence.batch import chunked
-from hei_fastapi_ddd.shared.persistence.compat import ci_like
-from hei_fastapi_ddd.shared.exceptions.business import NotFoundError
 from hei_fastapi_ddd.contexts.biz.infrastructure.persistence.cg_test_knowledge_category_po import (
     CgTestKnowledgeCategory,
     CgTestKnowledgeDoc,
@@ -23,6 +20,9 @@ from hei_fastapi_ddd.contexts.biz.interfaces.http.cg_test_knowledge_category_sch
     CgTestKnowledgeDocCreateRequest,
     CgTestKnowledgeDocUpdateRequest,
 )
+from hei_fastapi_ddd.shared.exceptions.business import NotFoundError
+from hei_fastapi_ddd.shared.persistence.batch import chunked
+from hei_fastapi_ddd.shared.persistence.compat import ci_like
 
 
 class CgTestKnowledgeCategoryRepository:

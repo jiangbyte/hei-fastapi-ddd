@@ -6,13 +6,15 @@
 
 from pydantic import Field
 
+from hei_fastapi_ddd.contexts.profile.interfaces.http.admin_schemas import ProfileUserAdminResponse
+from hei_fastapi_ddd.contexts.profile.interfaces.http.identity_schemas import IdentityStatusResponse
+from hei_fastapi_ddd.contexts.profile.interfaces.http.portal_schemas import (
+    ProfileUserPortalResponse,
+)
 from hei_fastapi_ddd.shared.config.enums import AccountType
 from hei_fastapi_ddd.shared.schema.base import ApiSchema
 from hei_fastapi_ddd.shared.schema.common_schema import IdNameResponse
 from hei_fastapi_ddd.shared.schema.wire import WireBool
-from hei_fastapi_ddd.contexts.profile.interfaces.http.admin_schemas import ProfileUserAdminResponse
-from hei_fastapi_ddd.contexts.profile.interfaces.http.identity_schemas import IdentityStatusResponse
-from hei_fastapi_ddd.contexts.profile.interfaces.http.portal_schemas import ProfileUserPortalResponse
 
 
 class BindTargetRequest(ApiSchema):

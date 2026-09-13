@@ -4,12 +4,17 @@
 """
 import logging
 
-from hei_fastapi_ddd.shared.audit.queue import OperationAuditEvent
-from hei_fastapi_ddd.shared.persistence.session import get_session_factory
-from hei_fastapi_ddd.shared.messaging import subscribe
 from hei_fastapi_ddd.contexts.profile.application.utils.profile import get_profile
-from hei_fastapi_ddd.contexts.sys.infrastructure.audit_labels import action_name, build_content, is_path_summary
 from hei_fastapi_ddd.contexts.sys.application.audit.support import resolve_account_login
+from hei_fastapi_ddd.contexts.sys.infrastructure.audit_labels import (
+    action_name,
+    build_content,
+    is_path_summary,
+)
+from hei_fastapi_ddd.shared.audit.queue import OperationAuditEvent
+from hei_fastapi_ddd.shared.messaging import subscribe
+from hei_fastapi_ddd.shared.persistence.session import get_session_factory
+
 logger = logging.getLogger(__name__)
 
 
@@ -56,7 +61,9 @@ async def _resolve_subject(event: OperationAuditEvent, operator_name: str | None
 
 async def _persist_audit_event(event: OperationAuditEvent) -> None:
     """将收到的审计事件写入 sys_operation_audit 表。"""
-    from hei_fastapi_ddd.contexts.sys.application.audit.audit_application_service import OperationAuditService
+    from hei_fastapi_ddd.contexts.sys.application.audit.audit_application_service import (
+        OperationAuditService,
+    )
 
     operator_name = await _resolve_operator_name(event.account_id, event.account_type)
     if operator_name is None:

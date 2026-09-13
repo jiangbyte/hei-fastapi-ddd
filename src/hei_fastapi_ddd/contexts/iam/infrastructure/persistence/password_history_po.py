@@ -11,8 +11,8 @@ from datetime import datetime
 from sqlalchemy import DateTime, Index, String, func
 from sqlalchemy.orm import Mapped, mapped_column
 
-from hei_fastapi_ddd.shared.persistence.base import Base
 from hei_fastapi_ddd.shared.id_generator.snowflake import generate_snowflake_id
+from hei_fastapi_ddd.shared.persistence.base import Base
 
 
 class SysAccountPasswordHistory(Base):

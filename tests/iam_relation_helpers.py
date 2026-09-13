@@ -1,6 +1,5 @@
 """ Author: Charlie """
 
-from hei_fastapi_ddd.shared.config.enums import AccountType, DataScope
 from hei_fastapi_ddd.contexts.iam.domain.enums import (
     GrantMode,
     GrantSubjectType,
@@ -9,6 +8,7 @@ from hei_fastapi_ddd.contexts.iam.domain.enums import (
     IamRelationType,
 )
 from hei_fastapi_ddd.contexts.iam.infrastructure.persistence.relation_po import SysIamRelation
+from hei_fastapi_ddd.shared.config.enums import AccountType, DataScope
 
 
 def account_role(

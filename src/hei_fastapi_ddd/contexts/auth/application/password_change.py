@@ -9,18 +9,22 @@ import secrets
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from hei_fastapi_ddd.shared.redis.keys import change_password_otp_key
-from hei_fastapi_ddd.shared.redis.redis import get_redis
+from hei_fastapi_ddd.contexts.iam.application.api.account_api_adapter import (
+    AccountApiAdapter as AccountRepository,
+)
+from hei_fastapi_ddd.contexts.iam.domain.enums import AccountIdentityType
+from hei_fastapi_ddd.contexts.iam.infrastructure.persistence.account_po import SysAccount
 from hei_fastapi_ddd.shared.config.enums import AccountType
 from hei_fastapi_ddd.shared.config.reader import config_reader
 from hei_fastapi_ddd.shared.config.settings import settings
 from hei_fastapi_ddd.shared.email.sender import send_templated_mail
 from hei_fastapi_ddd.shared.exceptions.business import BusinessError
+from hei_fastapi_ddd.shared.redis.keys import change_password_otp_key
+from hei_fastapi_ddd.shared.redis.redis import get_redis
 from hei_fastapi_ddd.shared.security.password import verify_password_async
 from hei_fastapi_ddd.shared.sms.sender import send_templated_sms
-from hei_fastapi_ddd.contexts.iam.infrastructure.persistence.account_po import SysAccount
-from hei_fastapi_ddd.contexts.iam.application.api.account_api_adapter import AccountApiAdapter as AccountRepository
-from hei_fastapi_ddd.contexts.iam.domain.enums import AccountIdentityType
+
+
 def change_verify_method() -> str:
     """读取配置的改密验证方式（默认 OLD_PASSWORD）。"""
     return (config_reader.get("PASSWORD_CHANGE_VERIFY_METHOD") or "OLD_PASSWORD").strip().upper()

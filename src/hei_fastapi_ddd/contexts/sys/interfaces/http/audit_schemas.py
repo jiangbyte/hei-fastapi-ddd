@@ -7,9 +7,9 @@ from datetime import datetime
 
 from pydantic import Field
 
-from hei_fastapi_ddd.shared.web.pagination import PageQuery
 from hei_fastapi_ddd.shared.schema.base import ApiSchema
 from hei_fastapi_ddd.shared.schema.wire import WireBool, WireInt
+from hei_fastapi_ddd.shared.web.pagination import PageQuery
 
 
 class OperationAuditRecord(ApiSchema):

@@ -13,8 +13,8 @@ from sqlalchemy.ext.asyncio import (
 )
 
 from hei_fastapi_ddd.shared.config.settings import settings
-from hei_fastapi_ddd.shared.persistence.compat import dialect_name_from_url
 from hei_fastapi_ddd.shared.observability.tracing import init_tracing
+from hei_fastapi_ddd.shared.persistence.compat import dialect_name_from_url
 
 # 进程级全局异步引擎与会话工厂。
 engine: AsyncEngine | None = None

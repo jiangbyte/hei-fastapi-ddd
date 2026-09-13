@@ -14,6 +14,7 @@ from datetime import UTC, datetime, timedelta
 from sqlalchemy import func, select
 
 from hei_fastapi_ddd.shared.config.settings import settings
+
 logger = logging.getLogger(__name__)
 
 # 与 hei-boot AuditAlertJob.SENSITIVE_ACTIONS 一致。
@@ -66,7 +67,9 @@ class AuditAnalyzer:
 
     async def _check_audit_volume(self, db, threshold: int) -> list[AlertEvent]:
         """暴力破解近似检测：分析窗口内审计日志总量超过阈值（Boot: audit_volume）。"""
-        from hei_fastapi_ddd.contexts.sys.infrastructure.persistence.audit_po import SysOperationAuditLog
+        from hei_fastapi_ddd.contexts.sys.infrastructure.persistence.audit_po import (
+            SysOperationAuditLog,
+        )
 
         window_seconds = max(60, settings.audit_alert.analysis_interval_seconds)
         since = datetime.now(UTC) - timedelta(seconds=window_seconds)
@@ -108,7 +111,9 @@ class AuditAnalyzer:
 
     async def _check_unusual_hours(self, db) -> list[AlertEvent]:
         """凌晨 0-6 点的敏感操作（角色/权限变更）。"""
-        from hei_fastapi_ddd.contexts.sys.infrastructure.persistence.audit_po import SysOperationAuditLog
+        from hei_fastapi_ddd.contexts.sys.infrastructure.persistence.audit_po import (
+            SysOperationAuditLog,
+        )
 
         now = datetime.now(UTC)
         if now.hour > 5:
@@ -132,7 +137,9 @@ class AuditAnalyzer:
 
     async def _check_sensitive_ops(self, db) -> list[AlertEvent]:
         """检测角色授权/权限变更等敏感操作（按账户聚合）。"""
-        from hei_fastapi_ddd.contexts.sys.infrastructure.persistence.audit_po import SysOperationAuditLog
+        from hei_fastapi_ddd.contexts.sys.infrastructure.persistence.audit_po import (
+            SysOperationAuditLog,
+        )
 
         since = datetime.now(UTC) - timedelta(seconds=300)
         stmt = (
@@ -160,7 +167,9 @@ class AuditAnalyzer:
 
     async def _check_bulk_delete(self, db, threshold: int) -> list[AlertEvent]:
         """同账户 5 分钟内大量删除操作。"""
-        from hei_fastapi_ddd.contexts.sys.infrastructure.persistence.audit_po import SysOperationAuditLog
+        from hei_fastapi_ddd.contexts.sys.infrastructure.persistence.audit_po import (
+            SysOperationAuditLog,
+        )
 
         since = datetime.now(UTC) - timedelta(seconds=300)
         stmt = (
@@ -193,7 +202,9 @@ class AuditAnalyzer:
 
     async def _check_ip_anomaly(self, db, threshold: int) -> list[AlertEvent]:
         """同账户 15 分钟内从多个不同 IP 成功登录。"""
-        from hei_fastapi_ddd.contexts.sys.infrastructure.persistence.audit_po import SysOperationAuditLog
+        from hei_fastapi_ddd.contexts.sys.infrastructure.persistence.audit_po import (
+            SysOperationAuditLog,
+        )
 
         since = datetime.now(UTC) - timedelta(seconds=900)
         stmt = (

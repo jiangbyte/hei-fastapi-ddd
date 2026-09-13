@@ -3,8 +3,8 @@
 站点页脚配置解析（对齐 hei-boot SiteFooterConfig）。
 """
 
-from hei_fastapi_ddd.shared.config.reader import config_reader
 from hei_fastapi_ddd.contexts.auth.interfaces.http.auth_schemas import SiteFooterResponse
+from hei_fastapi_ddd.shared.config.reader import config_reader
 
 
 def _trim(value: str | None) -> str:

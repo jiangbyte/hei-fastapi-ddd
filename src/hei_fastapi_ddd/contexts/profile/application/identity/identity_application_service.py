@@ -9,13 +9,14 @@ from datetime import UTC, datetime
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from hei_fastapi_ddd.shared.audit import snapshots as audit_snapshots
-from hei_fastapi_ddd.shared.persistence.transaction import transactional
-from hei_fastapi_ddd.shared.exceptions.business import BusinessError, NotFoundError
-from hei_fastapi_ddd.shared.web.pagination import PageData, build_page
-from hei_fastapi_ddd.shared.security.session import SessionPayload
-from hei_fastapi_ddd.shared.storage.url import normalize_object_name
 from hei_fastapi_ddd.contexts.profile.application.identity import crypto as identity_crypto
+from hei_fastapi_ddd.contexts.profile.application.identity.handlers import (
+    RealNameBusinessHandlerRegistry,
+)
+from hei_fastapi_ddd.contexts.profile.application.identity.support import (
+    sanitize_status,
+    sanitize_summary,
+)
 from hei_fastapi_ddd.contexts.profile.domain.identity.enums import (
     DOCUMENT_TYPES,
     IdentitySnapshotStatus,
@@ -23,9 +24,13 @@ from hei_fastapi_ddd.contexts.profile.domain.identity.enums import (
     RealNameCaseStatus,
     VerifyChannel,
 )
-from hei_fastapi_ddd.contexts.profile.application.identity.handlers import RealNameBusinessHandlerRegistry
-from hei_fastapi_ddd.contexts.profile.infrastructure.persistence.identity_po import ProfileIdentity, RealNameCase
-from hei_fastapi_ddd.contexts.profile.infrastructure.identity_providers.registry import get_provider_registry
+from hei_fastapi_ddd.contexts.profile.infrastructure.identity_providers.registry import (
+    get_provider_registry,
+)
+from hei_fastapi_ddd.contexts.profile.infrastructure.persistence.identity_po import (
+    ProfileIdentity,
+    RealNameCase,
+)
 from hei_fastapi_ddd.contexts.profile.infrastructure.persistence.identity_repository import (
     ProfileIdentityRepository,
     RealNameCaseRecordRepository,
@@ -50,10 +55,15 @@ from hei_fastapi_ddd.contexts.profile.interfaces.http.identity_schemas import (
     RealNameCaseSubmitRequest,
     RealNameCaseSummaryResponse,
 )
-from hei_fastapi_ddd.contexts.profile.application.identity.support import sanitize_status, sanitize_summary
 from hei_fastapi_ddd.contexts.sys.application.audit.support import resolve_account_login
-from hei_fastapi_ddd.contexts.sys.infrastructure.persistence.file_repository import FileRepository
 from hei_fastapi_ddd.contexts.sys.application.file.file_application_service import FileService
+from hei_fastapi_ddd.contexts.sys.infrastructure.persistence.file_repository import FileRepository
+from hei_fastapi_ddd.shared.audit import snapshots as audit_snapshots
+from hei_fastapi_ddd.shared.exceptions.business import BusinessError, NotFoundError
+from hei_fastapi_ddd.shared.persistence.transaction import transactional
+from hei_fastapi_ddd.shared.security.session import SessionPayload
+from hei_fastapi_ddd.shared.storage.url import normalize_object_name
+from hei_fastapi_ddd.shared.web.pagination import PageData, build_page
 
 
 def _normalize_business_type(business_type: str | None) -> str:

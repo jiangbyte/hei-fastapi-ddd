@@ -7,11 +7,11 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from hei_fastapi_ddd.contexts.iam.domain.enums import AccountIdentityType
 from hei_fastapi_ddd.shared.config.enums import AccountType, account_config_key
 from hei_fastapi_ddd.shared.config.reader import config_reader
 from hei_fastapi_ddd.shared.config.settings import settings
 from hei_fastapi_ddd.shared.exceptions.business import AuthenticationError, BusinessError
-from hei_fastapi_ddd.contexts.iam.domain.enums import AccountIdentityType
 
 
 @dataclass(frozen=True, slots=True)

@@ -2,9 +2,9 @@
 
 from datetime import UTC, datetime, timedelta
 
-from hei_fastapi_ddd.shared.web.schema import ApiResponse
 from hei_fastapi_ddd.shared.schema.base import ApiSchema, to_schema
 from hei_fastapi_ddd.shared.schema.datetime import format_utc_iso8601
+from hei_fastapi_ddd.shared.web.schema import ApiResponse
 
 
 class SampleSchema(ApiSchema):

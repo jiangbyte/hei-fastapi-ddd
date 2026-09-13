@@ -5,9 +5,12 @@
 
 import logging
 
-from hei_fastapi_ddd.shared.persistence.session import get_session_factory
-from hei_fastapi_ddd.contexts.iam.application.account.account_application_service import AccountService
+from hei_fastapi_ddd.contexts.iam.application.account.account_application_service import (
+    AccountService,
+)
 from hei_fastapi_ddd.contexts.sys.application.job.registry import job_handler
+from hei_fastapi_ddd.shared.persistence.session import get_session_factory
+
 logger = logging.getLogger(__name__)
 
 

@@ -6,12 +6,16 @@ from __future__ import annotations
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from hei_fastapi_ddd.contexts.profile.infrastructure.persistence.admin_po import ProfileUserAdmin
+from hei_fastapi_ddd.contexts.profile.infrastructure.persistence.admin_repository import (
+    ProfileUserAdminRepository,
+)
+from hei_fastapi_ddd.contexts.profile.infrastructure.persistence.portal_po import ProfileUserPortal
+from hei_fastapi_ddd.contexts.profile.infrastructure.persistence.portal_repository import (
+    ProfileUserPortalRepository,
+)
 from hei_fastapi_ddd.shared.config.enums import AccountType
 from hei_fastapi_ddd.shared.exceptions.business import BusinessError
-from hei_fastapi_ddd.contexts.profile.infrastructure.persistence.admin_po import ProfileUserAdmin
-from hei_fastapi_ddd.contexts.profile.infrastructure.persistence.admin_repository import ProfileUserAdminRepository
-from hei_fastapi_ddd.contexts.profile.infrastructure.persistence.portal_po import ProfileUserPortal
-from hei_fastapi_ddd.contexts.profile.infrastructure.persistence.portal_repository import ProfileUserPortalRepository
 
 
 def as_account_type(account_type: AccountType | str) -> AccountType:

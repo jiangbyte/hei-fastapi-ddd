@@ -7,23 +7,28 @@ from typing import Any
 from fastapi import APIRouter, Depends, FastAPI
 from sqlalchemy import select
 
+from hei_fastapi_ddd.contexts.iam.application.resource.resource_application_service import (
+    ResourceService,
+)
+from hei_fastapi_ddd.contexts.iam.domain.enums import ResourceType
+from hei_fastapi_ddd.contexts.iam.infrastructure.persistence.resource_po import SysResource
+from hei_fastapi_ddd.contexts.iam.interfaces.http.resource_schemas import (
+    ResourceCreateRequest,
+    ResourcePermissionBindRequest,
+)
+from hei_fastapi_ddd.factory import create_app
+from hei_fastapi_ddd.shared.deps.auth import require_account_type, require_permission
+from hei_fastapi_ddd.shared.exceptions.business import BusinessError
 from hei_fastapi_ddd.shared.redis.keys import (
     permission_resource_cache_key,
     permission_resource_method_cache_key,
 )
-from hei_fastapi_ddd.shared.exceptions.business import BusinessError
 from hei_fastapi_ddd.shared.security.permission_registry import (
     ACCOUNT_TYPE_META_ATTR,
     PERMISSION_META_ATTR,
     scan_permission_registry,
     sync_permission_registry,
 )
-from hei_fastapi_ddd.shared.deps.auth import require_account_type, require_permission
-from hei_fastapi_ddd.factory import create_app
-from hei_fastapi_ddd.contexts.iam.domain.enums import ResourceType
-from hei_fastapi_ddd.contexts.iam.infrastructure.persistence.resource_po import SysResource
-from hei_fastapi_ddd.contexts.iam.interfaces.http.resource_schemas import ResourceCreateRequest, ResourcePermissionBindRequest
-from hei_fastapi_ddd.contexts.iam.application.resource.resource_application_service import ResourceService
 from tests.conftest import FakeRedis
 
 

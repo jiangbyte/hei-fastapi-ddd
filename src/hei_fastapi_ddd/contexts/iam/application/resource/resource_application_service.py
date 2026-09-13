@@ -6,22 +6,23 @@
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from hei_fastapi_ddd.shared.audit import snapshots as audit_snapshots
-from hei_fastapi_ddd.shared.config.enums import AccountType
-from hei_fastapi_ddd.shared.persistence.transaction import transactional
-from hei_fastapi_ddd.shared.exceptions.business import AuthorizationError, ConflictError
-from hei_fastapi_ddd.shared.web.pagination import PageData, build_page
-from hei_fastapi_ddd.shared.schema.base import IdQuery, IdsRequest, to_schema, to_schema_list
-from hei_fastapi_ddd.shared.security.data_scope import resolve_data_scope_dept_ids
-from hei_fastapi_ddd.shared.security.permission_registry import (
-    ensure_registered_permission_key,
-    list_permission_resources,
-)
-from hei_fastapi_ddd.shared.security.session import SessionPayload
+from hei_fastapi_ddd.contexts.iam.application.support import audit as iam_audit
 from hei_fastapi_ddd.contexts.iam.domain.enums import ResourceType
-from hei_fastapi_ddd.contexts.iam.infrastructure.persistence.relation_repository import IamRelationRepository
-from hei_fastapi_ddd.contexts.iam.infrastructure.persistence.resource_po import SysResource, SysResourceModule
-from hei_fastapi_ddd.contexts.iam.infrastructure.persistence.resource_repository import ResourceModuleRepository, ResourceRepository
+from hei_fastapi_ddd.contexts.iam.infrastructure.persistence.relation_repository import (
+    IamRelationRepository,
+)
+from hei_fastapi_ddd.contexts.iam.infrastructure.persistence.resource_po import (
+    SysResource,
+    SysResourceModule,
+)
+from hei_fastapi_ddd.contexts.iam.infrastructure.persistence.resource_repository import (
+    ResourceModuleRepository,
+    ResourceRepository,
+)
+from hei_fastapi_ddd.contexts.iam.interfaces.http.iam_schemas import (
+    PermissionRegistryItem,
+    ResourceGrantModuleOption,
+)
 from hei_fastapi_ddd.contexts.iam.interfaces.http.resource_schemas import (
     ResourceAdminPageQuery,
     ResourceButtonCreateRequest,
@@ -40,8 +41,18 @@ from hei_fastapi_ddd.contexts.iam.interfaces.http.resource_schemas import (
     SysResourcePermissionRelSchema,
     SysResourceSchema,
 )
-from hei_fastapi_ddd.contexts.iam.interfaces.http.iam_schemas import PermissionRegistryItem, ResourceGrantModuleOption
-from hei_fastapi_ddd.contexts.iam.application.support import audit as iam_audit
+from hei_fastapi_ddd.shared.audit import snapshots as audit_snapshots
+from hei_fastapi_ddd.shared.config.enums import AccountType
+from hei_fastapi_ddd.shared.exceptions.business import AuthorizationError, ConflictError
+from hei_fastapi_ddd.shared.persistence.transaction import transactional
+from hei_fastapi_ddd.shared.schema.base import IdQuery, IdsRequest, to_schema, to_schema_list
+from hei_fastapi_ddd.shared.security.data_scope import resolve_data_scope_dept_ids
+from hei_fastapi_ddd.shared.security.permission_registry import (
+    ensure_registered_permission_key,
+    list_permission_resources,
+)
+from hei_fastapi_ddd.shared.security.session import SessionPayload
+from hei_fastapi_ddd.shared.web.pagination import PageData, build_page
 
 
 class ResourceService:
