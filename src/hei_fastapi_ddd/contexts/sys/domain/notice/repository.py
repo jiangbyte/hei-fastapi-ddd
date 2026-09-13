@@ -1,0 +1,26 @@
+""" Author: Charlie
+
+notice 仓储端口。
+"""
+
+from __future__ import annotations
+
+from typing import Protocol
+
+from hei_fastapi_ddd.contexts.sys.domain.notice.aggregate import Notice
+
+
+class NoticeRepository(Protocol):
+    """notice 仓储协议。"""
+
+    async def find_by_id(self, id: str) -> Notice | None:
+        """按主键查找。"""
+        ...
+
+    async def save(self, entity: Notice) -> Notice:
+        """持久化聚合。"""
+        ...
+
+    async def delete_many(self, ids: list[str]) -> None:
+        """批量删除。"""
+        ...

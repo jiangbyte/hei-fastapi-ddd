@@ -1,0 +1,84 @@
+{# Author: Charlie #}
+-- 由 HEI 代码生成器生成。
+-- Author: {{ plan.author }}
+-- 生成时间：{{ ctx.generated_at }}
+-- 执行前请按需调整 module_id/parent_id。
+-- 方言：{{ db_dialect }}
+BEGIN;
+
+INSERT INTO sys_resource (id, parent_id, code, name, resource_type, module_id, path, component, icon, sort, is_visible, is_cache, is_affix, status, description, extra)
+VALUES (
+  '{{ menu_permission.menu_id }}',
+  NULLIF({{ plan.parent_resource_id | sql }}, ''),
+  '{{ permission_prefix.replace(":", "_") }}',
+  '{{ plan.menu_name }}',
+  'MENU',
+  NULLIF({{ plan.resource_module_id | sql }}, ''),
+  '{{ plan.menu_path }}',
+  '{{ plan.component_path }}',
+  {{ plan.icon | sql }},
+  {{ plan.sort }},
+  true,
+  false,
+  false,
+  'ENABLED',
+  {{ plan.description | sql }},
+  '{}'
+)
+{% if db_dialect == 'mysql' %}
+ON DUPLICATE KEY UPDATE
+  name = VALUES(name), path = VALUES(path), component = VALUES(component), updated_at = now();
+{% else %}
+ON CONFLICT (id) DO UPDATE
+SET name = EXCLUDED.name, path = EXCLUDED.path, component = EXCLUDED.component, updated_at = now();
+{% endif %}
+
+{% for action in menu_permission.actions %}
+INSERT INTO sys_resource (id, parent_id, code, name, resource_type, module_id, sort, is_visible, is_cache, is_affix, status, extra)
+VALUES (
+  '{{ action.resource_id }}',
+  '{{ menu_permission.menu_id }}',
+  '{{ permission_prefix.replace(":", "_") }}_{{ action.key }}',
+  '{{ action.label }}{{ plan.business_name }}',
+  'BUTTON',
+  NULLIF({{ plan.resource_module_id | sql }}, ''),
+  {{ action.sort }},
+  false,
+  false,
+  false,
+  'ENABLED',
+  '{}'
+)
+{% if db_dialect == 'mysql' %}
+ON DUPLICATE KEY UPDATE name = VALUES(name), updated_at = now();
+{% else %}
+ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, updated_at = now();
+{% endif %}
+
+INSERT INTO sys_iam_relation (id, subject_type, subject_id, relation_type, target_type, target_id, target_key, grant_mode, data_scope, custom_scope_dept_ids, is_primary, sort, status, description, extra)
+VALUES (
+  '{{ action.relation_id }}',
+  'RESOURCE',
+  '{{ action.resource_id }}',
+  'RESOURCE_PERMISSION',
+  'PERMISSION',
+  '',
+  '{{ permission_prefix }}:{{ action.key }}',
+  'CASCADE',
+  'ALL',
+  '[]',
+  false,
+  {{ action.sort }},
+  'ENABLED',
+  '{{ action.label }}{{ plan.business_name }}',
+  '{}'
+)
+{% if db_dialect == 'mysql' %}
+ON DUPLICATE KEY UPDATE description = VALUES(description), updated_at = now();
+{% else %}
+ON CONFLICT (id)
+DO UPDATE SET description = EXCLUDED.description, updated_at = now();
+{% endif %}
+
+{% endfor %}
+COMMIT;

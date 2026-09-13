@@ -1,0 +1,71 @@
+name: ci
+
+on:
+  push:
+    branches: [main, master, develop]
+  pull_request:
+
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - db: postgres
+            extras: "[dev,postgres]"
+            db_url: "postgresql+asyncpg://postgres:postgres@127.0.0.1:5432/hei_fastapi_test"
+          - db: mysql
+            extras: "[dev,mysql]"
+            db_url: "mysql+aiomysql://root:root@127.0.0.1:3306/hei_fastapi_test"
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: hei_fastapi_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d hei_fastapi_test"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+      mysql:
+        image: mysql:8.0
+        env:
+          MYSQL_ROOT_PASSWORD: root
+          MYSQL_DATABASE: hei_fastapi_test
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd "mysqladmin ping -h 127.0.0.1 -uroot -proot"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install
+        run: |
+          python -m pip install -U pip
+          pip install -e ".${{ matrix.extras }}"
+      - name: Ruff
+        run: ruff check src/hei_fastapi_ddd tests
+      - name: Unit + API tests
+        env:
+          # Valid Fernet key (32 url-safe base64-encoded bytes); CI-only, not for prod.
+          APP__CONFIG_CRYPTO_KEY: "EkFRKxJWiXzKVpHYuMq_hcPvTdQr2ThbA8-J_HYZib4="
+          DB__URL: ${{ matrix.db_url }}
+          REDIS__URL: "redis://localhost:6379/0"
+        run: pytest tests/domain tests/api tests/unit -q --tb=short
+      - name: Bandit (medium+)
+        if: matrix.db == 'postgres'
+        run: bandit -q -r src/hei_fastapi_ddd -x src/hei_fastapi_ddd/contexts/biz -ll
+      - name: pip-audit
+        if: matrix.db == 'postgres'
+        run: pip-audit --strict || pip-audit
+        continue-on-error: true

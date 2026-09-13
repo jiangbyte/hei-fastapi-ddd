@@ -1,0 +1,235 @@
+{# Author: Charlie #}
+<!--
+  由 HEI 代码生成器生成。
+  Author: {{ plan.author }}
+  生成时间：{{ ctx.generated_at }}
+-->
+
+<script setup lang="ts">
+import type { FormInst, FormRules } from 'naive-ui'
+import { {{ plan.entity_name | ts_api_name }} } from '@/api'
+{% if target.has_form_bool or target.has_form_int or target.has_form_float %}
+import { wireFields } from '@/utils/wire'
+{% endif %}
+import { createRequiredRule{{ ", toApiDateTime, toFormDateTime" if target.has_form_datetime else "" }} } from '@/utils'
+import { computed, reactive, ref } from 'vue'
+
+const emit = defineEmits<{
+  saved: []
+}>()
+
+const formRef = ref<FormInst | null>(null)
+const defaultFormData: Record<string, any> = {
+{% for field in target.form_fields %}
+  {{ field.name }}: {{ field.vue_default }},
+{% endfor %}
+}
+const state = reactive({
+  showModal: false,
+  loading: false,
+  submitLoading: false,
+  dataId: null as string | null,
+  formModel: normalizeFormData(),
+})
+
+const modalTitle = computed(() => state.dataId ? '编辑{{ plan.sub_business_name or "明细" }}' : '新增{{ plan.sub_business_name or "明细" }}')
+const rules = computed<FormRules>(() => ({
+{% for field in target.form_fields if field.is_required or field.is_json %}
+  {{ field.name }}: [
+{% if field.is_required %}
+{% if field.python_type == "bool" %}
+    {
+      validator: () => typeof state.formModel.{{ field.name }} === 'boolean',
+      message: '请选择{{ field.label }}',
+      trigger: 'change',
+    },
+{% elif field.python_type in ["int", "float"] %}
+    {
+      validator: () => typeof state.formModel.{{ field.name }} === 'number' && Number.isFinite(state.formModel.{{ field.name }}),
+      message: '请输入{{ field.label }}',
+      trigger: ['input', 'blur'],
+    },
+{% else %}
+    createRequiredRule('{{ field.label }}', {{ "'change'" if field.form_widget == "dict" or field.python_type == "bool" or field.is_datetime else "'input'" }}),
+{% endif %}
+{% endif %}
+{% if field.is_json %}
+    {
+      validator: () => isValidJsonValue(state.formModel.{{ field.name }}),
+      message: '请输入合法 JSON 对象',
+      trigger: ['input', 'blur'],
+    },
+{% endif %}
+  ],
+{% endfor %}
+}))
+
+async function openModal(id?: string, defaults: Partial<typeof defaultFormData> = {}) {
+  state.dataId = id ?? null
+  state.formModel = normalizeFormData(defaults)
+  state.showModal = true
+  if (id) {
+    await fetchDetail(id)
+  }
+}
+
+async function fetchDetail(id: string) {
+  state.loading = true
+  try {
+    const response = await {{ plan.entity_name | ts_api_name }}.childDetail({ id })
+    state.formModel = normalizeFormData(response.data ?? {})
+  } finally {
+    state.loading = false
+  }
+}
+
+function normalizeFormData(data: Record<string, any> = {}): Record<string, any> {
+  return {
+    ...defaultFormData,
+    ...data,
+{% if target.has_form_bool or target.has_form_int or target.has_form_float %}
+    ...wireFields(data, {
+{% for field in target.form_fields %}
+{% if field.is_bool %}
+      {{ field.name }}: 'bool',
+{% elif field.python_type == "int" %}
+      {{ field.name }}: 'int',
+{% elif field.python_type == "float" %}
+      {{ field.name }}: 'float',
+{% endif %}
+{% endfor %}
+    }, defaultFormData),
+{% endif %}
+{% for field in target.form_fields if field.is_datetime %}
+    {{ field.name }}: toFormDateTime(data.{{ field.name }}),
+{% endfor %}
+{% for field in target.form_fields if field.is_json %}
+    {{ field.name }}: stringifyJsonValue(data.{{ field.name }}),
+{% endfor %}
+  }
+}
+{% if target.needs_submit_normalize %}
+
+function normalizeSubmitData(data: Record<string, any>): Record<string, any> {
+  return {
+    ...data,
+{% for field in target.form_fields if field.is_datetime %}
+    {{ field.name }}: toApiDateTime(data.{{ field.name }}),
+{% endfor %}
+{% for field in target.form_fields if field.is_json %}
+    {{ field.name }}: parseJsonValue(data.{{ field.name }}),
+{% endfor %}
+  }
+}
+{% endif %}
+{% if target.has_form_json %}
+
+function parseJsonValue(value: unknown) {
+  const text = String(value ?? '').trim()
+  if (!text) {
+    return {}
+  }
+  const parsed = JSON.parse(text)
+  if (Array.isArray(parsed) || typeof parsed !== 'object' || parsed === null) {
+    throw new Error('JSON value must be an object')
+  }
+  return parsed
+}
+
+function isValidJsonValue(value: unknown) {
+  try {
+    parseJsonValue(value)
+    return true
+  } catch {
+    return false
+  }
+}
+
+function stringifyJsonValue(value: unknown) {
+  if (value === undefined || value === null || value === '') {
+    return '{}'
+  }
+  if (typeof value === 'string') {
+    try {
+      return JSON.stringify(JSON.parse(value), null, 2)
+    } catch {
+      return value
+    }
+  }
+  return JSON.stringify(value, null, 2)
+}
+{% endif %}
+
+function closeModal() {
+  state.showModal = false
+  state.submitLoading = false
+}
+
+async function submitForm() {
+  await formRef.value?.validate()
+  state.submitLoading = true
+  try {
+    const payload = {{ "normalizeSubmitData(state.formModel)" if target.needs_submit_normalize else "state.formModel" }}
+    if (state.dataId) {
+      await {{ plan.entity_name | ts_api_name }}.childUpdate({ ...payload, {{ target.pk_name }}: state.dataId })
+      window.$message.success('更新成功')
+    } else {
+      await {{ plan.entity_name | ts_api_name }}.childCreate(payload)
+      window.$message.success('创建成功')
+    }
+    emit('saved')
+    closeModal()
+  } finally {
+    state.submitLoading = false
+  }
+}
+
+defineExpose({
+  openModal,
+})
+</script>
+
+<template>
+  <NModal
+    v-model:show="state.showModal"
+    preset="card"
+    draggable
+    :mask-closable="false"
+    :title="modalTitle"
+    style="width: 720px"
+    :segmented="{ content: true, action: true }"
+  >
+    <NSpin :show="state.loading">
+      <NScrollbar class="max-h-[min(620px,calc(100vh-300px))] pr-16px">
+        <NForm ref="formRef" :model="state.formModel" :rules="rules" label-placement="left" label-width="110" :disabled="state.loading || state.submitLoading">
+{% for field in target.form_fields %}
+          <NFormItem label="{{ field.label }}" path="{{ field.name }}">
+{% if field.form_widget == "number" or field.python_type in ["int", "float"] %}
+            <NInputNumber v-model:value="state.formModel.{{ field.name }}" class="w-full" />
+{% elif field.form_widget == "textarea" %}
+            <NInput v-model:value="state.formModel.{{ field.name }}" type="textarea" :autosize="{ minRows: 3, maxRows: 8 }" />
+{% elif field.form_widget == "dict" and field.dict_code %}
+            <DictSelect v-model="state.formModel.{{ field.name }}" dict-code="{{ field.dict_code }}" />
+{% elif field.is_json %}
+            <NInput v-model:value="state.formModel.{{ field.name }}" type="textarea" :autosize="{ minRows: 4, maxRows: 12 }" />
+{% elif field.python_type == "bool" %}
+            <NSwitch v-model:value="state.formModel.{{ field.name }}" />
+{% elif field.form_widget == "datetime" or field.python_type == "datetime" %}
+            <NDatePicker v-model:formatted-value="state.formModel.{{ field.name }}" type="datetime" value-format="yyyy-MM-dd HH:mm:ss" class="w-full" clearable />
+{% else %}
+            <NInput v-model:value="state.formModel.{{ field.name }}" />
+{% endif %}
+          </NFormItem>
+{% endfor %}
+        </NForm>
+      </NScrollbar>
+    </NSpin>
+
+    <template #action>
+      <NSpace justify="end">
+        <NButton @click="closeModal">取消</NButton>
+        <NButton type="primary" :loading="state.submitLoading" @click="submitForm">确认</NButton>
+      </NSpace>
+    </template>
+  </NModal>
+</template>

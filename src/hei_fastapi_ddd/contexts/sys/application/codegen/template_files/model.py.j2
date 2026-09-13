@@ -1,0 +1,36 @@
+{# Author: Charlie #}
+"""
+由 HEI 代码生成器生成。
+Author: {{ plan.author }}
+生成时间：{{ ctx.generated_at }}
+"""
+
+from datetime import datetime
+{% if main.model_fields|selectattr('is_json')|list or (has_sub and sub and sub.model_fields|selectattr('is_json')|list) %}
+from typing import Any
+{% endif %}
+
+from sqlalchemy import JSON, Boolean, DateTime, Float, Integer, Numeric, String, Text
+from sqlalchemy.orm import Mapped, mapped_column
+
+from app.core.db.base import Base
+from app.core.db.mixins import OwnerDeptMixin, TimestampMixin
+from app.core.id_generator.snowflake import generate_snowflake_id
+
+
+class {{ main.entity_name }}(Base, TimestampMixin, OwnerDeptMixin):
+    __tablename__ = "{{ main.table_name }}"
+
+{% for field in main.model_fields %}
+    {{ field.name }}: Mapped[{{ field.python_type }}{% if field.is_nullable and not field.is_primary_key %} | None{% endif %}] = mapped_column({{ field.sa_type }}{% if field.is_primary_key %}, primary_key=True{% endif %}{% if field.is_primary_key or not field.is_nullable %}, nullable=False{% endif %}{% if field.name == "id" %}, default=generate_snowflake_id{% endif %}{% if field.python_type == "dict[str, Any]" and not field.is_nullable %}, default=dict{% endif %}{% if field.comment %}, comment="{{ field.comment }}"{% endif %})
+{% endfor %}
+{% if has_sub and sub %}
+
+
+class {{ sub.entity_name }}(Base, TimestampMixin):
+    __tablename__ = "{{ sub.table_name }}"
+
+{% for field in sub.model_fields %}
+    {{ field.name }}: Mapped[{{ field.python_type }}{% if field.is_nullable and not field.is_primary_key %} | None{% endif %}] = mapped_column({{ field.sa_type }}{% if field.is_primary_key %}, primary_key=True{% endif %}{% if field.is_primary_key or not field.is_nullable %}, nullable=False{% endif %}{% if field.name == "id" %}, default=generate_snowflake_id{% endif %}{% if field.python_type == "dict[str, Any]" and not field.is_nullable %}, default=dict{% endif %}{% if field.comment %}, comment="{{ field.comment }}"{% endif %})
+{% endfor %}
+{% endif %}
