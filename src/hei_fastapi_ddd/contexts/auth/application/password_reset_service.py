@@ -9,13 +9,13 @@ import json
 import secrets
 from urllib.parse import urlencode
 
-from hei_fastapi_ddd.contexts.auth.application.base import _PASSWORD_RESET_URL_KEYS, _audit_record
-from hei_fastapi_ddd.contexts.auth.interfaces.http.auth_schemas import (
-    ForgotPasswordByPhoneRequest,
-    ForgotPasswordRequest,
-    ResetPasswordByPhoneRequest,
-    ResetPasswordRequest,
+from hei_fastapi_ddd.contexts.auth.application.dto import (
+    ForgotPasswordByPhoneCommand,
+    ForgotPasswordCommand,
+    ResetPasswordByPhoneCommand,
+    ResetPasswordCommand,
 )
+from hei_fastapi_ddd.contexts.auth.application.base import _PASSWORD_RESET_URL_KEYS, _audit_record
 from hei_fastapi_ddd.contexts.iam.application.account.password_helper import (
     validate_and_record_password,
 )
@@ -24,12 +24,14 @@ from hei_fastapi_ddd.contexts.sys.application.audit.audit_application_service im
     OperationAuditService,
 )
 from hei_fastapi_ddd.contexts.sys.application.audit.support import resolve_account_login
+from hei_fastapi_ddd.contexts.auth.application.support.account_login import (
+    resolve_account_login_label,
+)
 from hei_fastapi_ddd.shared.audit import snapshots as audit_snapshots
 from hei_fastapi_ddd.shared.config.enums import AccountType
 from hei_fastapi_ddd.shared.config.reader import config_reader
 from hei_fastapi_ddd.shared.config.settings import settings
 from hei_fastapi_ddd.shared.email.sender import send_templated_mail
-from hei_fastapi_ddd.shared.exceptions.business import AuthenticationError, BusinessError
 from hei_fastapi_ddd.shared.persistence.transaction import transactional
 from hei_fastapi_ddd.shared.redis.keys import (
     password_reset_token_key,
@@ -38,6 +40,7 @@ from hei_fastapi_ddd.shared.redis.keys import (
 from hei_fastapi_ddd.shared.security.password import hash_password_async, verify_password_async
 from hei_fastapi_ddd.shared.security.token import generate_token
 from hei_fastapi_ddd.shared.sms.sender import send_templated_sms
+from hei_fastapi_ddd.types.business import AuthenticationError, BusinessError
 
 
 class PasswordResetMixin:
@@ -45,7 +48,7 @@ class PasswordResetMixin:
 
     async def forgot_password(
         self,
-        payload: ForgotPasswordRequest,
+        payload: ForgotPasswordCommand,
         account_type: AccountType,
         client_ip: str | None = None,
         user_agent: str | None = None,
@@ -57,7 +60,7 @@ class PasswordResetMixin:
             email,
             [AccountIdentityType.EMAIL],
         )
-        if account is None or account.account_type != account_type.value:
+        if account is None or account.get("account_type") != account_type.value:
             await self._record_password_reset_request(
                 account_type,
                 email,
@@ -85,7 +88,7 @@ class PasswordResetMixin:
             settings.auth.password_reset_token_ttl_seconds,
             json.dumps(
                 {
-                    "account_id": account.id,
+                    "account_id": account["id"],
                     "account_type": account_type.value,
                     "email": email,
                     "token_hash": await hash_password_async(reset_token),
@@ -110,12 +113,12 @@ class PasswordResetMixin:
             True,
             client_ip,
             user_agent,
-            account.id,
+            account["id"],
         )
 
     async def reset_password(
         self,
-        payload: ResetPasswordRequest,
+        payload: ResetPasswordCommand,
         account_type: AccountType,
         client_ip: str | None = None,
         user_agent: str | None = None,
@@ -138,34 +141,27 @@ class PasswordResetMixin:
 
         account = await self.account_repo.get_required(str(data["account_id"]))
         self._validate_account_status(account, account_type)
-        account_name = await resolve_account_login(self.db, account.id) or account.id
+        account_name = await resolve_account_login_label(self.account_api, account["id"]) or account["id"]
         audit_snapshots.before_entity(account)
         audit_snapshots.subject(account_name)
         async with transactional(self.db):
-            await validate_and_record_password(
-                self.db,
-                account.id,
-                payload.password,
-                changed_by=account.id,
-                change_reason="self_reset",
-                account=account,
-            )
+            await validate_and_record_password(self.db, account["id"], payload.password, changed_by=account["id"], change_reason="self_reset", account_repo=self.account_api, password_port=self.password_port)
             await self.account_repo.update_password_hash(
-                account.id, await hash_password_async(payload.password)
+                account["id"], await hash_password_async(payload.password)
             )
-        updated = await self.account_repo.get_required(account.id)
+        updated = await self.account_repo.get_required(account["id"])
         audit_snapshots.after_entity(updated)
         await redis.delete(key)
-        await self.session_service.delete_account_sessions(account.account_type, account.id)
+        await self.session_service.delete_account_sessions(account["account_type"], account["id"])
         await OperationAuditService(self.db).record(
             **_audit_record(
                 module="auth",
                 action="reset_password",
                 resource_type="auth",
-                resource_id=account.id,
+                resource_id=account["id"],
                 success=True,
-                account_id=account.id,
-                account_type=account.account_type,
+                account_id=account["id"],
+                account_type=account["account_type"],
                 ip=client_ip,
                 user_agent=user_agent,
             )
@@ -173,7 +169,7 @@ class PasswordResetMixin:
 
     async def forgot_password_by_phone(
         self,
-        payload: ForgotPasswordByPhoneRequest,
+        payload: ForgotPasswordByPhoneCommand,
         account_type: AccountType,
         client_ip: str | None = None,
         user_agent: str | None = None,
@@ -184,7 +180,7 @@ class PasswordResetMixin:
         account = await self.account_repo.get_account_by_identifier(
             phone, [AccountIdentityType.PHONE]
         )
-        if account is None or account.account_type != account_type.value:
+        if account is None or account.get("account_type") != account_type.value:
             return
         try:
             self._validate_account_status(account, account_type)
@@ -206,10 +202,10 @@ class PasswordResetMixin:
                 module="auth",
                 action="forgot_password_phone",
                 resource_type="auth",
-                resource_id=account.id,
+                resource_id=account["id"],
                 success=True,
-                account_id=account.id,
-                account_type=account.account_type,
+                account_id=account["id"],
+                account_type=account["account_type"],
                 ip=client_ip,
                 user_agent=user_agent,
             )
@@ -217,7 +213,7 @@ class PasswordResetMixin:
 
     async def reset_password_by_phone(
         self,
-        payload: ResetPasswordByPhoneRequest,
+        payload: ResetPasswordByPhoneCommand,
         account_type: AccountType,
         client_ip: str | None = None,
         user_agent: str | None = None,
@@ -235,38 +231,31 @@ class PasswordResetMixin:
         account = await self.account_repo.get_account_by_identifier(
             phone, [AccountIdentityType.PHONE]
         )
-        if account is None or account.account_type != account_type.value:
+        if account is None or account.get("account_type") != account_type.value:
             raise AuthenticationError("Account not found")
         self._validate_account_status(account, account_type)
-        account_name = await resolve_account_login(self.db, account.id) or account.id
+        account_name = await resolve_account_login_label(self.account_api, account["id"]) or account["id"]
         audit_snapshots.before_entity(account)
         audit_snapshots.subject(account_name)
 
         async with transactional(self.db):
-            await validate_and_record_password(
-                self.db,
-                account.id,
-                payload.password,
-                changed_by=account.id,
-                change_reason="self_reset_phone",
-                account=account,
-            )
+            await validate_and_record_password(self.db, account["id"], payload.password, changed_by=account["id"], change_reason="self_reset_phone", account_repo=self.account_api, password_port=self.password_port)
             await self.account_repo.update_password_hash(
-                account.id, await hash_password_async(payload.password)
+                account["id"], await hash_password_async(payload.password)
             )
-        updated = await self.account_repo.get_required(account.id)
+        updated = await self.account_repo.get_required(account["id"])
         audit_snapshots.after_entity(updated)
         await redis.delete(key)
-        await self.session_service.delete_account_sessions(account.account_type, account.id)
+        await self.session_service.delete_account_sessions(account["account_type"], account["id"])
         await OperationAuditService(self.db).record(
             **_audit_record(
                 module="auth",
                 action="reset_password_phone",
                 resource_type="auth",
-                resource_id=account.id,
+                resource_id=account["id"],
                 success=True,
-                account_id=account.id,
-                account_type=account.account_type,
+                account_id=account["id"],
+                account_type=account["account_type"],
                 ip=client_ip,
                 user_agent=user_agent,
             )

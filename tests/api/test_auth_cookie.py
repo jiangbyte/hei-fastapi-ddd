@@ -7,7 +7,7 @@ from unittest.mock import AsyncMock
 import pytest
 from httpx import ASGITransport, AsyncClient
 
-from hei_fastapi_ddd.factory import create_app
+from hei_fastapi_ddd.app.factory import create_app
 from hei_fastapi_ddd.shared.config.settings import settings
 from hei_fastapi_ddd.shared.security.session import SessionPayload
 
@@ -41,11 +41,11 @@ async def test_admin_login_sets_session_cookie(monkeypatch):
         _fake_warning,
     )
     monkeypatch.setattr(
-        "hei_fastapi_ddd.contexts.auth.interfaces.http.auth_router.verify_captcha",
+        "hei_fastapi_ddd.contexts.auth.trigger.http.auth_router.verify_captcha",
         AsyncMock(),
     )
     monkeypatch.setattr(
-        "hei_fastapi_ddd.contexts.auth.interfaces.http.auth_router.decrypt_password",
+        "hei_fastapi_ddd.contexts.auth.trigger.http.auth_router.decrypt_password",
         AsyncMock(return_value="plain"),
     )
 

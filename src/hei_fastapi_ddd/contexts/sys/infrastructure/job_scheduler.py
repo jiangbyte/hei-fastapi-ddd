@@ -10,9 +10,10 @@ import asyncio
 import logging
 from datetime import UTC, datetime
 
-from hei_fastapi_ddd.contexts.sys.application.job.execution import EXECUTOR_SYSTEM, submit_run
 from hei_fastapi_ddd.contexts.sys.application.job.registry import load_handlers
-from hei_fastapi_ddd.contexts.sys.infrastructure.persistence.job_repository import JobRepository
+from hei_fastapi_ddd.contexts.sys.infrastructure.job.registry_loader import load_infrastructure_handlers
+from hei_fastapi_ddd.contexts.sys.infrastructure.job.runner import EXECUTOR_SYSTEM, JobRunnerImpl
+from hei_fastapi_ddd.contexts.sys.infrastructure.persistence.job_repository import JobRepositoryImpl
 from hei_fastapi_ddd.shared.config.settings import settings
 from hei_fastapi_ddd.shared.persistence.session import get_session_factory
 
@@ -30,6 +31,7 @@ async def start_job_scheduler() -> None:
     if _scheduler_task is not None and not _scheduler_task.done():
         return
     load_handlers()
+    load_infrastructure_handlers()
     loop = asyncio.get_running_loop()
     _scheduler_task = loop.create_task(_scan_loop())
     logger.info(
@@ -69,8 +71,9 @@ async def _scan_once() -> None:
     """扫描到期任务并逐个提交执行。"""
     factory = get_session_factory()
     async with factory() as session:
-        jobs = await JobRepository(session).find_due_jobs(
+        jobs = await JobRepositoryImpl(session).find_due_jobs(
             datetime.now(UTC), limit=MAX_SCAN_LIMIT
         )
+    runner = JobRunnerImpl()
     for job in jobs:
-        await submit_run(job.id, force=False, executor=EXECUTOR_SYSTEM)
+        await runner.submit(str(job["id"]), force=False, executor=EXECUTOR_SYSTEM)

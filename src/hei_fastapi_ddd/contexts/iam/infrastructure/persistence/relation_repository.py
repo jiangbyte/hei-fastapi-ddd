@@ -27,7 +27,7 @@ from hei_fastapi_ddd.contexts.iam.infrastructure.persistence.relation_po import 
 from hei_fastapi_ddd.contexts.iam.infrastructure.persistence.resource_po import SysResource
 from hei_fastapi_ddd.contexts.iam.infrastructure.persistence.role_po import SysRole
 from hei_fastapi_ddd.shared.config.enums import AccountType, DataScope, StatusEnum
-from hei_fastapi_ddd.shared.exceptions.business import NotFoundError
+from hei_fastapi_ddd.types.business import NotFoundError
 
 
 class AccountResourceGrantRecord(TypedDict):
@@ -83,7 +83,7 @@ def _as_account_type(value: AccountType | str) -> str:
     return value.value if isinstance(value, AccountType) else str(value)
 
 
-class IamRelationRepository:
+class IamRelationRepositoryImpl:
     """通用 IAM 关系仓储，统一承载成员关系、资源权限挂载和授权规则。"""
 
     def __init__(self, db: AsyncSession):
@@ -1097,3 +1097,6 @@ class IamRelationRepository:
             entity = None
         if not entity:
             raise NotFoundError("Subject not found")
+
+
+IamRelationRepository = IamRelationRepositoryImpl

@@ -8,8 +8,8 @@ import re
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from hei_fastapi_ddd.contexts.sys.application.codegen.dto import CodegenPreviewFile
 from hei_fastapi_ddd.contexts.sys.application.codegen.paths import frontend_api_index_rel
-from hei_fastapi_ddd.contexts.sys.interfaces.http.codegen_schemas import CodegenPreviewFile
 
 
 def api_index_rel() -> Path:
@@ -78,6 +78,14 @@ def is_api_index_append(path: str) -> bool:
     return normalized.endswith("index.ts.append") or normalized.endswith("/api/index.ts.append")
 
 
+def is_wiring_append(path: str) -> bool:
+    """判断路径是否为 biz wiring 追加片段。"""
+    normalized = path.replace("\\", "/")
+    return normalized.endswith("/infrastructure/wiring.py.append") or normalized.endswith(
+        "wiring.py.append"
+    )
+
+
 def apply_preview_files(
     files: list[CodegenPreviewFile],
     root: Path,
@@ -86,7 +94,8 @@ def apply_preview_files(
 ) -> ApplyResult:
     """在 ``root`` 下物化预览文件。
 
-    ``*.index.ts.append`` 幂等合并到 hei-admin ``src/api/index.ts``，而非写入独立文件。
+    ``*.index.ts.append`` 幂等合并到 hei-admin ``src/api/index.ts``；
+    ``wiring.py.append`` 追加到 biz ``infrastructure/wiring.py``。
     """
     result = ApplyResult()
     root = root.resolve()
@@ -103,6 +112,27 @@ def apply_preview_files(
                 result.merged.append(str(index_rel.as_posix()))
             else:
                 result.skipped.append(str(index_rel.as_posix()))
+            continue
+
+        if is_wiring_append(rel):
+            # 1. 定位 wiring 目标文件
+            # 2. 片段未出现则追加，避免重复生成
+            wiring_rel = Path(rel[: -len(".append")])
+            wiring_path = root / wiring_rel
+            snippet = item.content.strip()
+            current = wiring_path.read_text(encoding="utf-8") if wiring_path.exists() else ""
+            marker = snippet.splitlines()[0] if snippet else ""
+            if marker and marker in current:
+                result.skipped.append(str(wiring_rel.as_posix()))
+            else:
+                wiring_path.parent.mkdir(parents=True, exist_ok=True)
+                body = current.rstrip()
+                wiring_path.write_text(
+                    f"{body}\n\n{snippet}\n" if body else f"{snippet}\n",
+                    encoding="utf-8",
+                    newline="\n",
+                )
+                result.merged.append(str(wiring_rel.as_posix()))
             continue
 
         if skip_menu_sql and rel.endswith("_menu_permission.sql"):

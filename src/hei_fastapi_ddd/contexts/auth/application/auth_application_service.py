@@ -21,7 +21,7 @@ class AuthService(
     LifecycleMixin,
     AuthServiceBase,
 ):
-    """认证服务门面，保持既有调用方 `AuthService(db)` 不变。"""
+    """认证服务门面；由 `auth.infrastructure.wiring.build_auth_service` 装配依赖。"""
 
 
 __all__ = ["AuthService", "session_expires_in", "_audit_record"]

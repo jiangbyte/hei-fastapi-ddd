@@ -37,12 +37,31 @@ class DictRepository(Protocol):
         """按主键加载聚合。"""
         ...
 
+    async def get_required(self, dict_id: str) -> DictAggregate:
+        """按主键加载；不存在则抛错。"""
+        ...
+
     async def find_by_code(self, code: str) -> DictAggregate | None:
         """按编码加载聚合。"""
         ...
 
     async def save(self, entity: DictAggregate) -> DictAggregate:
         """新增或更新聚合。"""
+        ...
+
+    async def create_from_fields(
+        self,
+        *,
+        code: str,
+        label: str | None,
+        value: str | None,
+        color: str | None,
+        category: str | None,
+        parent_id: str | None,
+        status: str,
+        sort: int,
+    ) -> DictAggregate:
+        """便捷创建并持久化聚合。"""
         ...
 
     async def delete_many(self, ids: list[str]) -> None:
@@ -68,4 +87,12 @@ class DictRepository(Protocol):
 
     async def list_tree(self, *, category: str | None) -> list[DictTreeRecord]:
         """按分类组装字典树。"""
+        ...
+
+    async def get_row_required(self, dict_id: str) -> dict[str, object]:
+        """按主键加载行字典（审计快照用）。"""
+        ...
+
+    async def list_rows_by_ids(self, ids: list[str]) -> list[dict[str, object]]:
+        """按 ID 列表加载行字典（删除审计用）。"""
         ...

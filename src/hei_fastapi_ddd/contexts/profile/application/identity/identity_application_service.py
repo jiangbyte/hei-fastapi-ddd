@@ -9,6 +9,25 @@ from datetime import UTC, datetime
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from hei_fastapi_ddd.contexts.profile.application.identity.dto import (
+    IdentityPageQuery,
+    IdentityPageResponse,
+    IdentityRevokeCommand,
+    IdentityStatusResponse,
+    RealNameBusinessOptionResponse,
+    RealNameCaseApproveCommand,
+    RealNameCaseAttachmentResponse,
+    RealNameCaseCallbackCommand,
+    RealNameCaseDetailResponse,
+    RealNameCaseInitResponse,
+    RealNameCaseInitThirdPartyCommand,
+    RealNameCaseMyPageQuery,
+    RealNameCaseOptionsResponse,
+    RealNameCaseRejectCommand,
+    RealNameCaseReviewPageQuery,
+    RealNameCaseSubmitCommand,
+    RealNameCaseSummaryResponse,
+)
 from hei_fastapi_ddd.contexts.profile.application.identity import crypto as identity_crypto
 from hei_fastapi_ddd.contexts.profile.application.identity.handlers import (
     RealNameBusinessHandlerRegistry,
@@ -24,46 +43,21 @@ from hei_fastapi_ddd.contexts.profile.domain.identity.enums import (
     RealNameCaseStatus,
     VerifyChannel,
 )
-from hei_fastapi_ddd.contexts.profile.infrastructure.identity_providers.registry import (
-    get_provider_registry,
+from hei_fastapi_ddd.contexts.profile.domain.identity.ports import (
+    IdentityVerifyProviderRegistryPort,
+    ProfileIdentityRepositoryPort,
+    RealNameCaseRecordRepositoryPort,
+    RealNameCaseRepositoryPort,
 )
-from hei_fastapi_ddd.contexts.profile.infrastructure.persistence.identity_po import (
-    ProfileIdentity,
-    RealNameCase,
-)
-from hei_fastapi_ddd.contexts.profile.infrastructure.persistence.identity_repository import (
-    ProfileIdentityRepository,
-    RealNameCaseRecordRepository,
-    RealNameCaseRepository,
-)
-from hei_fastapi_ddd.contexts.profile.interfaces.http.identity_schemas import (
-    IdentityPageQuery,
-    IdentityPageResponse,
-    IdentityRevokeRequest,
-    IdentityStatusResponse,
-    RealNameBusinessOptionResponse,
-    RealNameCaseApproveRequest,
-    RealNameCaseAttachmentResponse,
-    RealNameCaseCallbackRequest,
-    RealNameCaseDetailResponse,
-    RealNameCaseInitResponse,
-    RealNameCaseInitThirdPartyRequest,
-    RealNameCaseMyPageQuery,
-    RealNameCaseOptionsResponse,
-    RealNameCaseRejectRequest,
-    RealNameCaseReviewPageQuery,
-    RealNameCaseSubmitRequest,
-    RealNameCaseSummaryResponse,
-)
-from hei_fastapi_ddd.contexts.sys.application.audit.support import resolve_account_login
+from hei_fastapi_ddd.contexts.auth.application.support.account_login import resolve_account_login_label
+from hei_fastapi_ddd.contexts.iam.application.api.account_api import AccountApi
 from hei_fastapi_ddd.contexts.sys.application.file.file_application_service import FileService
-from hei_fastapi_ddd.contexts.sys.infrastructure.persistence.file_repository import FileRepository
 from hei_fastapi_ddd.shared.audit import snapshots as audit_snapshots
-from hei_fastapi_ddd.shared.exceptions.business import BusinessError, NotFoundError
 from hei_fastapi_ddd.shared.persistence.transaction import transactional
 from hei_fastapi_ddd.shared.security.session import SessionPayload
 from hei_fastapi_ddd.shared.storage.url import normalize_object_name
 from hei_fastapi_ddd.shared.web.pagination import PageData, build_page
+from hei_fastapi_ddd.types.business import BusinessError, NotFoundError
 
 
 def _normalize_business_type(business_type: str | None) -> str:
@@ -75,10 +69,18 @@ def _normalize_business_type(business_type: str | None) -> str:
 class ProfileIdentityService:
     """profile_identity 快照服务。"""
 
-    def __init__(self, db: AsyncSession):
+    def __init__(
+        self,
+        db: AsyncSession,
+        *,
+        identity_repo: ProfileIdentityRepositoryPort,
+        case_repo: RealNameCaseRepositoryPort,
+        account_api: AccountApi,
+    ):
         self.db = db
-        self.repo = ProfileIdentityRepository(db)
-        self.case_repo = RealNameCaseRepository(db)
+        self.repo = identity_repo
+        self.case_repo = case_repo
+        self.account_api = account_api
 
     async def get_status_for_account(self, account_id: str) -> IdentityStatusResponse:
         identity = await self.repo.get_by_account_id(account_id)
@@ -109,47 +111,26 @@ class ProfileIdentityService:
     async def get_user_status_for_account(self, account_id: str) -> IdentityStatusResponse:
         return sanitize_status(await self.get_status_for_account(account_id))  # type: ignore[return-value]
 
-    async def upsert_on_approve(self, case: RealNameCase, reviewer_id: str) -> None:
-        identity = await self.repo.get_by_account_id(case.account_id or "")
-        is_new = identity is None
-        if identity is None:
-            identity = ProfileIdentity(account_id=case.account_id or "")
-            self.db.add(identity)
-        else:
-            audit_snapshots.before_entity(identity)
-        identity.status = IdentitySnapshotStatus.VERIFIED.value
-        identity.document_type = case.document_type
-        identity.real_name_cipher = case.real_name_cipher
-        identity.document_no_cipher = case.document_no_cipher
-        identity.document_no_hash = case.document_no_hash
-        identity.verify_channel = case.verify_channel
-        identity.provider = case.provider
-        identity.provider_order_no = case.provider_order_no
-        identity.verified_at = datetime.now(UTC)
-        identity.source_case_id = case.case_id
-        identity.revoked_at = None
-        identity.revoked_by = None
-        await self.db.flush()
-        if is_new:
-            audit_snapshots.created_entity(identity)
-        else:
-            audit_snapshots.after_entity(identity)
+    async def upsert_on_approve(self, case, reviewer_id: str) -> None:
+        await self.repo.upsert_verified_from_case(case, reviewer_id)
 
-    async def revoke(self, payload: IdentityRevokeRequest, operator_id: str) -> None:
+
+    async def revoke(self, payload: IdentityRevokeCommand, operator_id: str) -> None:
+        subject = (
+            await resolve_account_login_label(self.account_api, payload.account_id)
+            or payload.account_id
+        )
+        audit_snapshots.subject(subject)
         identity = await self.repo.get_by_account_id(payload.account_id)
         if identity is None or identity.status != IdentitySnapshotStatus.VERIFIED.value:
             raise NotFoundError("Verified identity not found")
-        subject = await resolve_account_login(self.db, payload.account_id) or payload.account_id
-        audit_snapshots.subject(subject)
         audit_snapshots.before_entity(identity)
-        identity.status = IdentitySnapshotStatus.REVOKED.value
-        identity.revoked_at = datetime.now(UTC)
-        identity.revoked_by = operator_id
-        await self.db.flush()
-        audit_snapshots.after_entity(identity)
+        updated = await self.repo.revoke_identity(payload.account_id, operator_id)
+        audit_snapshots.after_entity(updated)
+
 
     async def page(self, query: IdentityPageQuery) -> PageData[IdentityPageResponse]:
-        items, total = await self.repo.page(query)
+        items, total = await self.repo.page(query.model_dump(exclude={"current", "size"}), offset=query.offset, limit=query.size)
         return build_page(query, total, [_to_page_result(item) for item in items])
 
     async def is_verified(self, account_id: str) -> bool:
@@ -163,16 +144,33 @@ class ProfileIdentityService:
 class RealNameCaseService:
     """real_name_case 工单服务。"""
 
-    def __init__(self, db: AsyncSession):
+    def __init__(
+        self,
+        db: AsyncSession,
+        *,
+        account_api: AccountApi,
+        identity_repo: ProfileIdentityRepositoryPort,
+        case_repo: RealNameCaseRepositoryPort,
+        case_record_repo: RealNameCaseRecordRepositoryPort,
+        provider_registry: IdentityVerifyProviderRegistryPort,
+    ):
         self.db = db
-        self.case_repo = RealNameCaseRepository(db)
-        self.record_repo = RealNameCaseRecordRepository(db)
-        self.profile_service = ProfileIdentityService(db)
-        self.handler_registry = RealNameBusinessHandlerRegistry(
-            db, profile_service=self.profile_service
+        self.account_api = account_api
+        self.case_repo = case_repo
+        self.record_repo = case_record_repo
+        self.profile_service = ProfileIdentityService(
+            db,
+            identity_repo=identity_repo,
+            case_repo=case_repo,
+            account_api=account_api,
         )
-        self.provider_registry = get_provider_registry()
-        self.file_repo = FileRepository(db)
+        self.handler_registry = RealNameBusinessHandlerRegistry(
+            db,
+            identity_repo=identity_repo,
+            case_repo=case_repo,
+            profile_service=self.profile_service,
+        )
+        self.provider_registry = provider_registry
         self.file_service = FileService(db)
 
     async def options(self) -> RealNameCaseOptionsResponse:
@@ -190,7 +188,7 @@ class RealNameCaseService:
             document_types=list(DOCUMENT_TYPES),
         )
 
-    async def submit(self, payload: RealNameCaseSubmitRequest, session: SessionPayload) -> None:
+    async def submit(self, payload: RealNameCaseSubmitCommand, session: SessionPayload) -> None:
         business_type = _normalize_business_type(payload.business_type)
         handler = self.handler_registry.require(business_type)
         await handler.validate_submit(session.account_id, payload)
@@ -199,27 +197,13 @@ class RealNameCaseService:
         if not attachments:
             raise BusinessError("请上传证件材料")
 
-        entity = RealNameCase(
-            business_type=business_type,
-            verify_channel=VerifyChannel.MANUAL.value,
-            status=RealNameCaseStatus.PENDING.value,
-            account_id=session.account_id,
-            attachment_ids=attachments,
-            submitter_id=session.account_id,
-        )
-        _fill_sensitive_fields(
-            entity,
-            payload.document_type,
-            payload.real_name,
-            payload.document_no,
-        )
-        if payload.applicant_contact and payload.applicant_contact.strip():
-            entity.applicant_contact_cipher = identity_crypto.encrypt(
-                payload.applicant_contact.strip()
-            )
-
         async with transactional(self.db):
-            await self.case_repo.create(entity)
+            entity = await self.case_repo.create_manual_submission(
+                account_id=session.account_id,
+                business_type=business_type,
+                payload=payload.model_dump(),
+                attachments=attachments,
+            )
             await self.record_repo.append(
                 case=entity,
                 action="SUBMIT",
@@ -230,10 +214,10 @@ class RealNameCaseService:
         audit_snapshots.created_entity(entity)
 
     async def init_third_party(
-        self, payload: RealNameCaseInitThirdPartyRequest, session: SessionPayload
+        self, payload: RealNameCaseInitThirdPartyCommand, session: SessionPayload
     ) -> RealNameCaseInitResponse:
         business_type = _normalize_business_type(payload.business_type)
-        validate_param = RealNameCaseSubmitRequest(
+        validate_param = RealNameCaseSubmitCommand(
             business_type=business_type,
             document_type=payload.document_type,
             real_name=payload.real_name,
@@ -243,22 +227,12 @@ class RealNameCaseService:
             session.account_id, validate_param
         )
 
-        entity = RealNameCase(
-            business_type=business_type,
-            verify_channel=VerifyChannel.THIRD_PARTY.value,
-            status=RealNameCaseStatus.PENDING.value,
-            account_id=session.account_id,
-            submitter_id=session.account_id,
-        )
-        _fill_sensitive_fields(
-            entity,
-            payload.document_type,
-            payload.real_name,
-            payload.document_no,
-        )
-
         async with transactional(self.db):
-            await self.case_repo.create(entity)
+            entity = await self.case_repo.create_third_party_draft(
+                account_id=session.account_id,
+                business_type=business_type,
+                payload=payload.model_dump(),
+            )
             provider = self.provider_registry.resolve(
                 VerifyChannel.THIRD_PARTY.value,
                 payload.document_type,
@@ -278,7 +252,7 @@ class RealNameCaseService:
             audit_snapshots.created_entity(entity)
             return init_result
 
-    async def callback(self, payload: RealNameCaseCallbackRequest) -> None:
+    async def callback(self, payload: RealNameCaseCallbackCommand) -> None:
         entity = await self.case_repo.get_required(payload.case_id)
         if entity.status != RealNameCaseStatus.PENDING.value:
             raise BusinessError("Case is not pending")
@@ -335,7 +309,7 @@ class RealNameCaseService:
     async def my_page(
         self, query: RealNameCaseMyPageQuery, session: SessionPayload
     ) -> PageData[RealNameCaseSummaryResponse]:
-        items, total = await self.case_repo.page_my(query, session.account_id)
+        items, total = await self.case_repo.page_my(query.model_dump(exclude={"current", "size"}), session.account_id, offset=query.offset, limit=query.size)
         summaries = [_to_summary(item) for item in items]
         sanitized = [sanitize_summary(item) for item in summaries]  # type: ignore[misc]
         return build_page(query, total, sanitized)
@@ -343,7 +317,7 @@ class RealNameCaseService:
     async def review_page(
         self, query: RealNameCaseReviewPageQuery
     ) -> PageData[RealNameCaseSummaryResponse]:
-        items, total = await self.case_repo.page_review(query)
+        items, total = await self.case_repo.page_review(query.model_dump(exclude={"current", "size"}), offset=query.offset, limit=query.size)
         return build_page(query, total, [_to_summary(item) for item in items])
 
     async def detail(self, case_id: str) -> RealNameCaseDetailResponse:
@@ -357,12 +331,12 @@ class RealNameCaseService:
         return result
 
     async def approve(
-        self, payload: RealNameCaseApproveRequest, session: SessionPayload
+        self, payload: RealNameCaseApproveCommand, session: SessionPayload
     ) -> None:
         entity = await self.case_repo.get_required(payload.case_id)
         if entity.status != RealNameCaseStatus.PENDING.value:
             raise BusinessError("Case is not pending")
-        subject = await resolve_account_login(self.db, entity.account_id or "") or (
+        subject = await resolve_account_login_label(self.account_api, entity.account_id or "") or (
             entity.account_id or ""
         )
         audit_snapshots.subject(subject)
@@ -387,12 +361,12 @@ class RealNameCaseService:
         audit_snapshots.after_entity(entity)
 
     async def reject(
-        self, payload: RealNameCaseRejectRequest, session: SessionPayload
+        self, payload: RealNameCaseRejectCommand, session: SessionPayload
     ) -> None:
         entity = await self.case_repo.get_required(payload.case_id)
         if entity.status != RealNameCaseStatus.PENDING.value:
             raise BusinessError("Case is not pending")
-        subject = await resolve_account_login(self.db, entity.account_id or "") or (
+        subject = await resolve_account_login_label(self.account_api, entity.account_id or "") or (
             entity.account_id or ""
         )
         reject_reason = payload.reject_reason.strip()
@@ -423,39 +397,23 @@ class RealNameCaseService:
     ) -> list[RealNameCaseAttachmentResponse]:
         if not attachment_ids:
             return []
-        files = await self.file_repo.list_by_object_names(attachment_ids)
+        files = await self.file_service.repo.list_by_object_names(attachment_ids)
         url_map = await self.file_service.resolve_access_urls(attachment_ids)
         attachments: list[RealNameCaseAttachmentResponse] = []
         for file in files:
-            object_name = file.object_name
-            resolved_url = url_map.get(object_name) or url_map.get(file.object_name)
+            object_name = str(file.get("object_name") or "")
+            resolved_url = url_map.get(object_name)
             attachments.append(
                 RealNameCaseAttachmentResponse(
                     object_name=object_name,
-                    id=file.id,
-                    original_name=file.original_name,
-                    content_type=file.content_type,
-                    size=file.size,
+                    id=str(file.get("id") or ""),
+                    original_name=file.get("original_name"),
+                    content_type=file.get("content_type"),
+                    size=file.get("size"),
                     url=resolved_url or file.url,
                 )
             )
         return attachments
-
-
-def _fill_sensitive_fields(
-    entity: RealNameCase,
-    document_type: str | None,
-    real_name: str | None,
-    document_no: str | None,
-) -> None:
-    entity.document_type = (
-        document_type.strip().upper() if document_type and document_type.strip() else None
-    )
-    entity.real_name_cipher = identity_crypto.encrypt(real_name)
-    entity.document_no_cipher = identity_crypto.encrypt(document_no)
-    entity.document_no_hash = identity_crypto.hash_document_no(
-        entity.document_type, document_no
-    )
 
 
 def _normalize_attachment_ids(attachment_ids: list[str] | None) -> list[str]:
@@ -473,7 +431,7 @@ def _normalize_attachment_ids(attachment_ids: list[str] | None) -> list[str]:
     return normalized
 
 
-def _to_summary(entity: RealNameCase) -> RealNameCaseSummaryResponse:
+def _to_summary(entity) -> RealNameCaseSummaryResponse:
     summary = RealNameCaseSummaryResponse(
         case_id=entity.case_id,
         account_id=entity.account_id,
@@ -496,7 +454,7 @@ def _to_summary(entity: RealNameCase) -> RealNameCaseSummaryResponse:
     return summary
 
 
-def _to_page_result(identity: ProfileIdentity) -> IdentityPageResponse:
+def _to_page_result(identity) -> IdentityPageResponse:
     result = IdentityPageResponse(
         account_id=identity.account_id,
         status=identity.status,

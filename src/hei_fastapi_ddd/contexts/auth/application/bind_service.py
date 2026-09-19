@@ -11,11 +11,11 @@ from hei_fastapi_ddd.contexts.iam.domain.enums import AccountIdentityType
 from hei_fastapi_ddd.shared.config.enums import AccountType
 from hei_fastapi_ddd.shared.config.settings import settings
 from hei_fastapi_ddd.shared.email.sender import send_templated_mail
-from hei_fastapi_ddd.shared.exceptions.business import BusinessError
 from hei_fastapi_ddd.shared.redis.keys import (
     bind_otp_key,
 )
 from hei_fastapi_ddd.shared.sms.sender import send_templated_sms
+from hei_fastapi_ddd.types.business import BusinessError
 
 
 class BindCodeMixin:
@@ -46,7 +46,7 @@ class BindCodeMixin:
         other = await self.account_repo.get_account_by_identifier(
             normalized, [identity_type]
         )
-        if other is not None and other.id != account_id:
+        if other is not None and str(other.get("id") or "") != account_id:
             raise BusinessError(
                 "邮箱已被使用" if channel_u == "EMAIL" else "手机号已被使用"
             )

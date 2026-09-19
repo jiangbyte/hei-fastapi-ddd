@@ -7,7 +7,7 @@ from datetime import UTC, datetime, timedelta
 
 from croniter import croniter
 
-from hei_fastapi_ddd.shared.exceptions.business import BusinessError
+from hei_fastapi_ddd.types.business import BusinessError
 
 TYPE_CRON = "CRON"
 TYPE_FIXED = "FIXED"

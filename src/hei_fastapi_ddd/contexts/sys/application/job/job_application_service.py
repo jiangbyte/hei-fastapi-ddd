@@ -1,7 +1,9 @@
 """ Author: Charlie
 
-定时任务服务层：任务维护、启停、立即执行与执行日志分页。
+定时任务应用服务。
 """
+
+from __future__ import annotations
 
 from datetime import UTC, datetime
 
@@ -9,117 +11,130 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from hei_fastapi_ddd.contexts.sys.application.job import cron as cron_util
 from hei_fastapi_ddd.contexts.sys.application.job import registry as job_registry
-from hei_fastapi_ddd.contexts.sys.application.job.execution import EXECUTOR_SYSTEM, submit_run
-from hei_fastapi_ddd.contexts.sys.infrastructure.persistence.job_repository import (
-    JobLogRepository,
-    JobRepository,
-)
-from hei_fastapi_ddd.contexts.sys.interfaces.http.job_schemas import (
+from hei_fastapi_ddd.contexts.sys.application.job.dto import (
     JobAdminPageQuery,
-    JobCreateRequest,
-    JobEnabledRequest,
+    JobCreateCommand,
+    JobEnabledCommand,
     JobLogAdminPageQuery,
-    JobUpdateRequest,
-    SysJobLogSchema,
-    SysJobSchema,
+    JobUpdateCommand,
 )
+from hei_fastapi_ddd.contexts.sys.application.job.execution import EXECUTOR_SYSTEM
+from hei_fastapi_ddd.contexts.sys.domain.job.repository import JobLogRepository, JobRepository
+from hei_fastapi_ddd.contexts.sys.domain.job.runner import JobRunnerPort
 from hei_fastapi_ddd.shared.audit import snapshots as audit_snapshots
-from hei_fastapi_ddd.shared.exceptions.business import BusinessError
 from hei_fastapi_ddd.shared.persistence.transaction import transactional
-from hei_fastapi_ddd.shared.schema.base import IdQuery, IdsRequest, to_schema, to_schema_list
 from hei_fastapi_ddd.shared.web.pagination import PageData, build_page
+from hei_fastapi_ddd.types.business import BusinessError
 
 
 class JobService:
-    """定时任务服务，负责任务维护与执行入口。"""
+    """定时任务服务。"""
 
-    def __init__(self, db: AsyncSession):
-        """绑定会话并初始化仓储。"""
+    def __init__(
+        self,
+        db: AsyncSession,
+        repo: JobRepository,
+        log_repo: JobLogRepository,
+        runner: JobRunnerPort,
+    ):
         self.db = db
-        self.repo = JobRepository(db)
-        self.log_repo = JobLogRepository(db)
+        self.repo = repo
+        self.log_repo = log_repo
+        self.runner = runner
 
     @staticmethod
     def _ensure_handler(handler: str) -> None:
-        """校验 handler 已注册为处理器。"""
         if job_registry.resolve(handler) is None:
             raise BusinessError(f"未找到任务处理器: {handler}")
 
-    async def create(self, payload: JobCreateRequest) -> None:
-        """事务内创建任务：校验触发配置并计算首次下次执行时间。"""
-        cron_util.validate(payload.trigger_type, payload.trigger_config)
-        self._ensure_handler(payload.handler)
+    async def create(self, command: JobCreateCommand) -> None:
+        """事务内创建任务。"""
+        cron_util.validate(command.trigger_type, command.trigger_config)
+        self._ensure_handler(command.handler)
         next_run_time = cron_util.compute_next_run_time(
-            payload.trigger_type, payload.trigger_config, datetime.now(UTC)
+            command.trigger_type, command.trigger_config, datetime.now(UTC)
         )
         async with transactional(self.db):
-            entity = await self.repo.create(payload, next_run_time=next_run_time)
-            audit_snapshots.created_entity(entity)
+            row = await self.repo.create(command.model_dump(), next_run_time=next_run_time)
+            audit_snapshots.created_entity(row)
 
-    async def update(self, payload: JobUpdateRequest) -> None:
-        """事务内更新任务：触发类型或配置变更时重置下次执行时间（对齐 hei-boot）。"""
-        entity = await self.repo.get_required(payload.id)
-        audit_snapshots.before_entity(entity)
+    async def update(self, command: JobUpdateCommand) -> None:
+        """事务内更新任务。"""
+        existing = await self.repo.get_required(command.id)
+        audit_snapshots.before_entity(existing)
+        config_changed = (
+            existing.get("trigger_type") != str(command.trigger_type)
+            or existing.get("trigger_config") != str(command.trigger_config)
+        )
+        cron_util.validate(command.trigger_type, command.trigger_config)
+        self._ensure_handler(command.handler)
         async with transactional(self.db):
-            config_changed = (
-                entity.trigger_type != str(payload.trigger_type)
-                or entity.trigger_config != str(payload.trigger_config)
-            )
-            cron_util.validate(payload.trigger_type, payload.trigger_config)
-            self._ensure_handler(payload.handler)
-            await self.repo.update(payload)
+            await self.repo.update(command.id, command.model_dump(exclude={"id"}))
             if config_changed:
-                entity.next_run_time = cron_util.compute_next_run_time(
-                    payload.trigger_type, payload.trigger_config, datetime.now(UTC)
+                await self.repo.set_next_run_time(
+                    command.id,
+                    cron_util.compute_next_run_time(
+                        command.trigger_type, command.trigger_config, datetime.now(UTC)
+                    ),
                 )
-            await self.db.flush()
-            audit_snapshots.after_entity(entity)
+            updated = await self.repo.get_required(command.id)
+            audit_snapshots.after_entity(updated)
 
-    async def delete(self, payload: IdsRequest) -> None:
+    async def delete(self, ids: list[str]) -> None:
         """事务内批量删除任务。"""
-        unique_ids = list(dict.fromkeys(payload.ids))
+        unique_ids = list(dict.fromkeys(ids))
         entities = [
-            entity
+            row
             for entity_id in unique_ids
-            if (entity := await self.repo.get_by_id(entity_id)) is not None
+            if (row := await self.repo.get_by_id(entity_id)) is not None
         ]
         async with transactional(self.db):
             audit_snapshots.deleted_all(entities)
             await self.repo.delete_many(unique_ids)
 
-    async def detail(self, query: IdQuery) -> SysJobSchema:
-        """查询任务详情并填充审计人昵称。"""
-        entity = await self.repo.get_required(query.id)
-        schema = to_schema(SysJobSchema, entity)
-        return schema
+    async def detail(self, job_id: str) -> dict:
+        return await self.repo.get_required(job_id)
 
-    async def page_admin(self, query: JobAdminPageQuery) -> PageData[SysJobSchema]:
-        """管理端分页查询任务并填充审计人昵称。"""
-        entities, total = await self.repo.page_admin(query)
-        schemas = to_schema_list(SysJobSchema, entities)
-        return build_page(query, total, schemas)
+    async def page_admin(self, query: JobAdminPageQuery) -> PageData[dict]:
+        items, total = await self.repo.page_admin(
+            query.model_dump(exclude={"current", "size"}),
+            offset=query.offset,
+            limit=query.size,
+        )
+        return build_page(query, total, items)  # type: ignore[arg-type]
 
-    async def update_enabled(self, payload: JobEnabledRequest) -> None:
-        """启停任务：重新启用时按当前时间重置下次执行时间，避免立即触发过期任务。"""
-        entity = await self.repo.get_required(payload.id)
-        audit_snapshots.before_entity(entity)
+    async def update_enabled(self, command: JobEnabledCommand) -> None:
+        """启停任务。"""
+        existing = await self.repo.get_required(command.id)
+        audit_snapshots.before_entity(existing)
         async with transactional(self.db):
-            entity.enabled = bool(payload.enabled)
-            if entity.enabled:
-                entity.next_run_time = cron_util.compute_next_run_time(
-                    entity.trigger_type, entity.trigger_config, datetime.now(UTC)
+            data = {"enabled": bool(command.enabled)}
+            if command.enabled:
+                data["next_run_time"] = cron_util.compute_next_run_time(
+                    str(existing.get("trigger_type")),
+                    str(existing.get("trigger_config")),
+                    datetime.now(UTC),
                 )
-            await self.db.flush()
-            audit_snapshots.after_entity(entity)
+            await self.repo.update(command.id, data)
+            updated = await self.repo.get_required(command.id)
+            audit_snapshots.after_entity(updated)
 
-    async def run_now(self, payload: IdQuery, *, executor: str | None) -> None:
-        """立即执行：校验任务存在且已启用后异步提交（force=true），接口立即返回。"""
-        job = await self.repo.get_required(payload.id)
-        if not job.enabled:
+    async def run_now(self, job_id: str, *, executor: str | None) -> None:
+        job = await self.repo.get_required(job_id)
+        if not job.get("enabled"):
             raise BusinessError("任务未启用，请先启用后再执行")
-        await submit_run(job.id, force=True, executor=executor or EXECUTOR_SYSTEM)
+        await self.runner.submit(
+            str(job["id"]), force=True, executor=executor or EXECUTOR_SYSTEM
+        )
 
-    async def page_logs(self, query: JobLogAdminPageQuery) -> PageData[SysJobLogSchema]:
-        """执行日志分页查询。"""
-        items, total = await self.log_repo.page_admin(query)
-        return build_page(query, total, to_schema_list(SysJobLogSchema, items))
+    async def cleanup_expired_logs(self, before: datetime, batch_size: int) -> int:
+        """清理过期执行日志。"""
+        return await self.log_repo.cleanup_expired(before=before, batch_size=batch_size)
+
+    async def page_logs(self, query: JobLogAdminPageQuery) -> PageData[dict]:
+        items, total = await self.log_repo.page_admin(
+            query.model_dump(exclude={"current", "size"}),
+            offset=query.offset,
+            limit=query.size,
+        )
+        return build_page(query, total, items)  # type: ignore[arg-type]

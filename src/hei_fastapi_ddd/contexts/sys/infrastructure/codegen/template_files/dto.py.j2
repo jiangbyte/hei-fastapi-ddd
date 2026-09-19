@@ -1,0 +1,73 @@
+{# Author: Charlie #}
+"""{{ main.entity_name }} 应用层 DTO（非 HTTP 契约）。"""
+
+from __future__ import annotations
+
+from datetime import datetime
+from typing import Any
+
+from pydantic import BaseModel, ConfigDict, Field
+
+
+class {{ main.entity_name }}CreateCommand(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+{% for field in main.form_fields %}
+    {{ field.name }}: {{ field.python_type }}{% if field.is_nullable and not field.is_required %} | None = None{% elif field.python_type == "dict[str, Any]" %} = Field(default_factory=dict){% elif not field.is_required and field.python_type == "bool" %} = False{% elif not field.is_required and field.python_type in ["int", "float"] %} = 0{% elif not field.is_required %} | None = None{% endif %}
+{% else %}
+    pass
+{% endfor %}
+
+
+class {{ main.entity_name }}UpdateCommand({{ main.entity_name }}CreateCommand):
+    {{ main.pk_name }}: str
+
+
+class {{ main.entity_name }}PageQuery(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    current: int = 1
+    size: int = 20
+{% for field in main.query_fields %}
+    {{ field.name }}: {{ field.python_type }} | None = None
+{% endfor %}
+
+    @property
+    def offset(self) -> int:
+        return max(self.current - 1, 0) * self.size
+{% if has_tree %}
+
+
+class {{ main.entity_name }}KeywordQuery(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    keyword: str | None = None
+{% endif %}
+{% if has_sub and sub %}
+
+
+class {{ sub.entity_name }}CreateCommand(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+{% for field in sub.form_fields %}
+    {{ field.name }}: {{ field.python_type }}{% if field.is_nullable and not field.is_required %} | None = None{% elif field.python_type == "dict[str, Any]" %} = Field(default_factory=dict){% elif not field.is_required and field.python_type == "bool" %} = False{% elif not field.is_required and field.python_type in ["int", "float"] %} = 0{% elif not field.is_required %} | None = None{% endif %}
+{% else %}
+    pass
+{% endfor %}
+
+
+class {{ sub.entity_name }}UpdateCommand({{ sub.entity_name }}CreateCommand):
+    {{ sub.pk_name }}: str
+
+
+class {{ sub.entity_name }}PageQuery(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    current: int = 1
+    size: int = 20
+{% for field in sub.query_fields %}
+    {{ field.name }}: {{ field.python_type }} | None = None
+{% endfor %}
+
+    @property
+    def offset(self) -> int:
+        return max(self.current - 1, 0) * self.size
+{% endif %}

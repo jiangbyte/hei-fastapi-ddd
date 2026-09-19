@@ -1,133 +1,109 @@
-""" Author: Charlie
+"""Author: Charlie
 
-职位应用服务：职位 CRUD、数据范围可见性校验与名称回显。
+职位应用服务：依赖 domain 仓储端口，不依赖 infrastructure / api。
 """
 
-from sqlalchemy import select
+from __future__ import annotations
+
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from hei_fastapi_ddd.contexts.iam.infrastructure.persistence.position_po import SysPosition
-from hei_fastapi_ddd.contexts.iam.infrastructure.persistence.position_repository import (
-    PositionRepository,
+from hei_fastapi_ddd.contexts.iam.application.position.dto import (
+    PositionCreateCommand,
+    PositionPageQuery,
+    PositionUpdateCommand,
 )
-from hei_fastapi_ddd.contexts.iam.interfaces.http.position_schemas import (
-    PositionAdminPageQuery,
-    PositionCreateRequest,
-    PositionUpdateRequest,
-    SysPositionSchema,
-)
+from hei_fastapi_ddd.contexts.iam.domain.position.repository import PositionRepository
 from hei_fastapi_ddd.shared.audit import snapshots as audit_snapshots
-from hei_fastapi_ddd.shared.exceptions.business import AuthorizationError
 from hei_fastapi_ddd.shared.persistence.transaction import transactional
-from hei_fastapi_ddd.shared.schema.base import IdQuery, IdsRequest, to_schema, to_schema_list
-from hei_fastapi_ddd.shared.security.data_scope import (
-    IAM_DEPT_PAGE,
-    IAM_POSITION_PAGE,
-    build_data_scope_filter,
-    resolve_data_scope_dept_ids,
-)
+from hei_fastapi_ddd.shared.schema.base import IdQuery, IdsRequest
+from hei_fastapi_ddd.shared.security.data_scope import IAM_DEPT_PAGE, IAM_POSITION_PAGE
+from hei_fastapi_ddd.shared.security.data_scope import resolve_data_scope_dept_ids
 from hei_fastapi_ddd.shared.security.session import SessionPayload
 from hei_fastapi_ddd.shared.web.pagination import PageData, build_page
+from hei_fastapi_ddd.types.business import AuthorizationError
 
 
 class PositionService:
     """职位应用服务。"""
 
-    def __init__(self, db: AsyncSession):
+    def __init__(self, db: AsyncSession, repo: PositionRepository):
         self.db = db
-        self.repo = PositionRepository(db)
+        self.repo = repo
 
     async def create(
-        self, payload: PositionCreateRequest, session: SessionPayload | None = None
+        self,
+        command: PositionCreateCommand,
+        session: SessionPayload | None = None,
     ) -> None:
         """创建职位，传入 session 时校验所属部门可见性。"""
-        if session is not None and payload.owner_dept_id:
-            await self._ensure_depts_visible(
-                session, "iam:position:create", [payload.owner_dept_id]
-            )
+        # 1. 数据范围：所属部门须在可见集合内
+        if session is not None and command.owner_dept_id:
+            await self._ensure_depts_visible(session, "iam:position:create", [command.owner_dept_id])
+        # 2. 持久化并写审计
         async with transactional(self.db):
-            await self.repo.create(payload)
-        stmt = (
-            select(SysPosition)
-            .where(
-                SysPosition.name == payload.name,
-                SysPosition.category == payload.category,
-                SysPosition.owner_dept_id == payload.owner_dept_id,
-            )
-            .order_by(SysPosition.created_at.desc())
-            .limit(1)
-        )
-        entity = (await self.db.execute(stmt)).scalar_one()
-        audit_snapshots.created_entity(entity)
+            row = await self.repo.create(command.model_dump())
+        audit_snapshots.created_entity(row)
 
     async def update(
-        self, payload: PositionUpdateRequest, session: SessionPayload | None = None
+        self,
+        command: PositionUpdateCommand,
+        session: SessionPayload | None = None,
     ) -> None:
         """更新职位，传入 session 时校验职位与所属部门可见性。"""
+        # 1. 可见性校验
         if session is not None:
-            await self._ensure_positions_visible(session, "iam:position:update", [payload.id])
-            if payload.owner_dept_id:
+            await self._ensure_positions_visible(session, "iam:position:update", [command.id])
+            if command.owner_dept_id:
                 await self._ensure_depts_visible(
-                    session, "iam:position:update", [payload.owner_dept_id]
+                    session, "iam:position:update", [command.owner_dept_id]
                 )
-        existing = await self.repo.get_required(payload.id)
+        # 2. 审计前快照、更新、审计后快照
+        existing = await self.repo.get_required(command.id)
         audit_snapshots.before_entity(existing)
         async with transactional(self.db):
-            await self.repo.update(payload)
-        updated = await self.repo.get_required(payload.id)
+            await self.repo.update(command.id, command.model_dump(exclude={"id"}))
+            updated = await self.repo.get_required(command.id)
         audit_snapshots.after_entity(updated)
 
-    async def delete(self, payload: IdsRequest, session: SessionPayload | None = None) -> None:
+    async def delete(
+        self,
+        payload: IdsRequest,
+        session: SessionPayload | None = None,
+    ) -> None:
         """删除职位，传入 session 时先校验可见性。"""
+        # 1. 可见性校验
         if session is not None:
             await self._ensure_positions_visible(session, "iam:position:delete", payload.ids)
+        # 2. 批量加载审计快照并删除
         unique_ids = list(dict.fromkeys(payload.ids))
-        entities = list(
-            (
-                await self.db.execute(
-                    select(SysPosition).where(SysPosition.id.in_(unique_ids))
-                )
-            )
-            .scalars()
-            .all()
-        )
+        entities = [await self.repo.get_required(entity_id) for entity_id in unique_ids]
         audit_snapshots.deleted_all(entities)
         async with transactional(self.db):
             await self.repo.delete_many(payload.ids)
 
     async def detail(
-        self, query: IdQuery, session: SessionPayload | None = None
-    ) -> SysPositionSchema:
-        """查询职位详情并回显创建人昵称。"""
+        self,
+        query: IdQuery,
+        session: SessionPayload | None = None,
+    ) -> dict:
+        """查询职位详情行。"""
         if session is not None:
             await self._ensure_positions_visible(session, "iam:position:detail", [query.id])
-        schema = to_schema(SysPositionSchema, await self.repo.get_required(query.id))
-        return schema
+        return await self.repo.get_required(query.id)
 
     async def page_admin(
         self,
-        query: PositionAdminPageQuery,
+        query: PositionPageQuery,
         session: SessionPayload | None = None,
-    ) -> PageData[SysPositionSchema]:
+    ) -> PageData[dict]:
         """分页查询职位，叠加数据范围过滤。"""
-        data_scope_filter = (
-            await self._position_scope_filter(session, "iam:position:page")
-            if session is not None
-            else None
+        items, total = await self.repo.page_admin(
+            query.model_dump(exclude={"current", "size"}),
+            offset=query.offset,
+            limit=query.size,
+            session=session,
         )
-        items, total = await self.repo.page_admin(query, data_scope_filter)
-        schemas = to_schema_list(SysPositionSchema, items)
-        return build_page(query, total, schemas)
-
-    async def _position_scope_filter(self, session: SessionPayload, permission_key: str):
-        """构造职位数据范围过滤条件。"""
-        return await build_data_scope_filter(
-            self.db,
-            session,
-            permission_key,
-            owner_column=SysPosition.created_by,
-            dept_column=SysPosition.owner_dept_id,
-        )
+        return build_page(query, total, items)  # type: ignore[arg-type]
 
     async def _ensure_positions_visible(
         self,
@@ -136,14 +112,14 @@ class PositionService:
         position_ids: list[str],
     ) -> None:
         """校验目标职位均在当前数据范围内，否则抛授权错误。"""
-        _ = permission_key
         unique_ids = list(dict.fromkeys(position_ids))
         if not unique_ids:
             return
-        data_scope_filter = await self._position_scope_filter(session, IAM_POSITION_PAGE)
-        if await self.repo.count_positions_in_scope(unique_ids, data_scope_filter) != len(
-            unique_ids
-        ):
+        if await self.repo.count_positions_in_scope(
+            unique_ids,
+            session=session,
+            permission=permission_key,
+        ) != len(unique_ids):
             raise AuthorizationError("Position is outside current data scope")
 
     async def _ensure_depts_visible(

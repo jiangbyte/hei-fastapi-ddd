@@ -1,8 +1,6 @@
-""" Author: Charlie
+"""代码生成仓储层：方案/字段的持久化、数据库元数据内省与资源选项查询。"""
 
-代码生成仓储层：方案/字段的持久化、数据库元数据内省与资源选项查询。
-"""
-
+from collections.abc import Mapping
 from typing import Any
 
 from sqlalchemy import Select, delete, func, inspect, select
@@ -18,93 +16,102 @@ from hei_fastapi_ddd.contexts.sys.infrastructure.persistence.codegen_po import (
     SysCodegenField,
     SysCodegenPlan,
 )
-from hei_fastapi_ddd.contexts.sys.interfaces.http.codegen_schemas import (
-    CodegenFieldUpdateItem,
-    CodegenPlanCreateRequest,
-    CodegenPlanPageQuery,
-    CodegenPlanUpdateRequest,
-)
 from hei_fastapi_ddd.shared.config.enums import AccountType, StatusEnum
-from hei_fastapi_ddd.shared.exceptions.business import ConflictError, NotFoundError
 from hei_fastapi_ddd.shared.persistence.compat import ci_like
+from hei_fastapi_ddd.types.business import ConflictError, NotFoundError
 
 
-class CodegenRepository:
-    """代码生成仓储，管理方案与字段，并提供数据库表结构内省。"""
+def _row_plan(entity: SysCodegenPlan) -> dict[str, Any]:
+    mapper = inspect(entity).mapper
+    return {attr.key: getattr(entity, attr.key) for attr in mapper.column_attrs}
+
+
+def _row_field(entity: SysCodegenField) -> dict[str, Any]:
+    mapper = inspect(entity).mapper
+    return {attr.key: getattr(entity, attr.key) for attr in mapper.column_attrs}
+
+
+def _row_resource(entity: SysResource) -> dict[str, Any]:
+    mapper = inspect(entity).mapper
+    return {attr.key: getattr(entity, attr.key) for attr in mapper.column_attrs}
+
+
+class CodegenRepositoryImpl:
+    """代码生成仓储。"""
 
     def __init__(self, db: AsyncSession):
-        """绑定数据库会话。"""
         self.db = db
 
-    async def create(self, payload: CodegenPlanCreateRequest) -> SysCodegenPlan:
-        """校验方案名唯一后创建方案。"""
-        await self._ensure_plan_name_unique(payload.name)
-        data = payload.model_dump(exclude_none=True)
-        if not data.get("id"):
-            data.pop("id", None)
-        entity = SysCodegenPlan(**data)
+    async def create(self, data: Mapping[str, Any]) -> dict[str, Any]:
+        await self._ensure_plan_name_unique(str(data["name"]))
+        payload = dict(data)
+        if not payload.get("id"):
+            payload.pop("id", None)
+        entity = SysCodegenPlan(**payload)
         self.db.add(entity)
         await self.db.flush()
-        return entity
+        return _row_plan(entity)
 
-    async def get_by_id(self, plan_id: str) -> SysCodegenPlan | None:
-        """按主键查询方案，不存在返回 None。"""
-        return await self.db.get(SysCodegenPlan, plan_id)
+    async def get_by_id(self, plan_id: str) -> dict[str, Any] | None:
+        entity = await self.db.get(SysCodegenPlan, plan_id)
+        return _row_plan(entity) if entity is not None else None
 
-    async def get_required(self, plan_id: str) -> SysCodegenPlan:
-        """按主键查询方案，不存在时抛出 NotFoundError。"""
-        entity = await self.get_by_id(plan_id)
+    async def get_required(self, plan_id: str) -> dict[str, Any]:
+        row = await self.get_by_id(plan_id)
+        if row is None:
+            raise NotFoundError("Codegen plan not found")
+        return row
+
+    async def update(self, plan_id: str, data: Mapping[str, Any]) -> None:
+        entity = await self.db.get(SysCodegenPlan, plan_id)
         if entity is None:
             raise NotFoundError("Codegen plan not found")
-        return entity
-
-    async def update(self, payload: CodegenPlanUpdateRequest) -> None:
-        """校验方案名唯一后更新方案字段（排除 id）。"""
-        entity = await self.get_required(payload.id)
-        await self._ensure_plan_name_unique(payload.name, payload.id)
-        data = payload.model_dump(exclude={"id"})
-        for key, value in data.items():
-            setattr(entity, key, value)
+        await self._ensure_plan_name_unique(str(data.get("name", entity.name)), plan_id)
+        for key, value in dict(data).items():
+            if key != "id":
+                setattr(entity, key, value)
         await self.db.flush()
 
     async def delete_many(self, plan_ids: list[str]) -> None:
-        """批量删除方案及其字段（不存在的 ID 静默跳过，对齐 hei-boot 幂等语义）。"""
         unique_ids = list(dict.fromkeys(plan_ids))
         if not unique_ids:
             return
-        # 先删除关联字段再删除方案，避免遗留孤儿记录。
         await self.db.execute(
             delete(SysCodegenField).where(SysCodegenField.plan_id.in_(unique_ids))
         )
         await self.db.execute(delete(SysCodegenPlan).where(SysCodegenPlan.id.in_(unique_ids)))
 
-    async def page_admin(self, query: CodegenPlanPageQuery) -> tuple[list[SysCodegenPlan], int]:
-        """按查询条件后台分页，返回记录列表与总数。"""
+    async def page_admin(
+        self,
+        filters: Mapping[str, Any],
+        *,
+        offset: int,
+        limit: int,
+    ) -> tuple[list[dict[str, Any]], int]:
         stmt: Select[tuple[SysCodegenPlan]] = select(SysCodegenPlan)
         count_stmt = select(func.count(SysCodegenPlan.id))
-        filters = []
-        if query.name:
-            filters.append(ci_like(SysCodegenPlan.name, query.name))
-        if query.table_name:
-            filters.append(ci_like(SysCodegenPlan.table_name, query.table_name))
-        if query.gen_type:
-            filters.append(SysCodegenPlan.gen_type == query.gen_type)
-        if filters:
-            stmt = stmt.where(*filters)
-            count_stmt = count_stmt.where(*filters)
+        clauses = []
+        if filters.get("name"):
+            clauses.append(ci_like(SysCodegenPlan.name, str(filters["name"])))
+        if filters.get("table_name"):
+            clauses.append(ci_like(SysCodegenPlan.table_name, str(filters["table_name"])))
+        if filters.get("gen_type"):
+            clauses.append(SysCodegenPlan.gen_type == filters["gen_type"])
+        if clauses:
+            stmt = stmt.where(*clauses)
+            count_stmt = count_stmt.where(*clauses)
         stmt = (
             stmt.order_by(SysCodegenPlan.updated_at.desc(), SysCodegenPlan.id.desc())
-            .offset(query.offset)
-            .limit(query.size)
+            .offset(offset)
+            .limit(limit)
         )
-        items = list((await self.db.execute(stmt)).scalars().all())
+        items = [_row_plan(e) for e in (await self.db.execute(stmt)).scalars().all()]
         total = (await self.db.execute(count_stmt)).scalar_one()
         return items, total
 
     async def list_fields(
         self, plan_id: str, table_role: str | None = None
-    ) -> list[SysCodegenField]:
-        """查询方案的字段配置，可按表角色过滤。"""
+    ) -> list[dict[str, Any]]:
         await self.get_required(plan_id)
         stmt = select(SysCodegenField).where(SysCodegenField.plan_id == plan_id)
         if table_role:
@@ -112,14 +119,14 @@ class CodegenRepository:
         stmt = stmt.order_by(
             SysCodegenField.table_role.asc(), SysCodegenField.sort.asc(), SysCodegenField.id.asc()
         )
-        return list((await self.db.execute(stmt)).scalars().all())
+        return [_row_field(e) for e in (await self.db.execute(stmt)).scalars().all()]
 
-    async def replace_fields(self, plan_id: str, fields: list[CodegenFieldUpdateItem]) -> None:
-        """先删后插，整体替换方案的字段配置。"""
+    async def replace_fields(self, plan_id: str, fields: list[Mapping[str, Any]]) -> None:
         await self.get_required(plan_id)
         await self.db.execute(delete(SysCodegenField).where(SysCodegenField.plan_id == plan_id))
         for item in fields:
-            data = item.model_dump(exclude={"id"})
+            data = dict(item)
+            data.pop("id", None)
             self.db.add(SysCodegenField(plan_id=plan_id, **data))
         await self.db.flush()
 
@@ -127,21 +134,31 @@ class CodegenRepository:
         self,
         plan_id: str,
         table_role: str,
-        fields: list[CodegenFieldUpdateItem],
+        fields: list[Mapping[str, Any]],
     ) -> None:
-        """按字段名合并反射结果，仅覆盖基础元数据而保留用户自定义控件配置。"""
         await self.get_required(plan_id)
-        existing = {
-            field.column_name: field for field in await self.list_fields(plan_id, table_role)
+        existing_pos = {
+            f.column_name: f
+            for f in (
+                await self.db.execute(
+                    select(SysCodegenField).where(
+                        SysCodegenField.plan_id == plan_id,
+                        SysCodegenField.table_role == table_role,
+                    )
+                )
+            )
+            .scalars()
+            .all()
         }
         for item in fields:
-            entity = existing.get(item.column_name)
-            data = item.model_dump(exclude={"id"})
+            data = dict(item)
+            data.pop("id", None)
+            column_name = data["column_name"]
+            entity = existing_pos.get(column_name)
             if entity is None:
                 self.db.add(SysCodegenField(plan_id=plan_id, **data))
                 continue
             for key, value in data.items():
-                # 跳过显示开关与查询控件等可编辑项，避免覆盖用户调整。
                 if key in {
                     "in_table",
                     "in_form",
@@ -155,11 +172,7 @@ class CodegenRepository:
                 setattr(entity, key, value)
         await self.db.flush()
 
-    async def list_resource_options(
-        self,
-        module_id: str | None = None,
-    ) -> list[SysResource]:
-        """查询可作为父资源的管理端目录/菜单/页面。"""
+    async def list_resource_options(self, module_id: str | None = None) -> list[dict[str, Any]]:
         stmt = (
             select(SysResource)
             .join(SysResourceModule, SysResource.module_id == SysResourceModule.id)
@@ -174,10 +187,9 @@ class CodegenRepository:
         )
         if module_id:
             stmt = stmt.where(SysResource.module_id == module_id)
-        return list((await self.db.execute(stmt)).scalars().all())
+        return [_row_resource(e) for e in (await self.db.execute(stmt)).scalars().all()]
 
     async def _ensure_plan_name_unique(self, name: str, plan_id: str | None = None) -> None:
-        """校验方案名唯一（排除自身），重复时抛出 ConflictError。"""
         stmt = select(SysCodegenPlan.id).where(SysCodegenPlan.name == name)
         if plan_id:
             stmt = stmt.where(SysCodegenPlan.id != plan_id)
@@ -185,12 +197,10 @@ class CodegenRepository:
             raise ConflictError("Codegen plan name already exists")
 
     async def list_database_tables(self) -> list[dict[str, str | None]]:
-        """通过数据库内省列出可生成的表及其注释。"""
         async with self.db.bind.connect() as conn:  # type: ignore[union-attr]
             return await conn.run_sync(_inspect_tables)
 
     async def list_database_columns(self, table_name: str) -> list[dict[str, Any]]:
-        """通过数据库内省列出表的列元数据，表不存在时抛出 NotFoundError。"""
         async with self.db.bind.connect() as conn:  # type: ignore[union-attr]
             columns = await conn.run_sync(_inspect_columns, table_name)
         if not columns:
@@ -198,12 +208,10 @@ class CodegenRepository:
         return columns
 
 
-# 代码生成自身的方案/字段表与迁移版本表不参与生成，避免自引用。
 EXCLUDED_TABLES = {"alembic_version", "sys_codegen_plan", "sys_codegen_field"}
 
 
 def _inspect_tables(conn: Connection) -> list[dict[str, str | None]]:
-    """同步内省数据库表，返回表名与注释列表（按表名排序）。"""
     inspector = inspect(conn)
     result: list[dict[str, str | None]] = []
     for table_name in inspector.get_table_names():
@@ -218,7 +226,6 @@ def _inspect_tables(conn: Connection) -> list[dict[str, str | None]]:
 
 
 def _inspect_columns(conn: Connection, table_name: str) -> list[dict[str, Any]]:
-    """同步内省表列，映射为前端所需元数据。"""
     inspector = inspect(conn)
     table_names = set(inspector.get_table_names())
     if table_name not in table_names:
@@ -245,7 +252,6 @@ def _inspect_columns(conn: Connection, table_name: str) -> list[dict[str, Any]]:
 
 
 def map_db_type(column_type: object) -> tuple[str, str]:
-    """将 SQLAlchemy 列类型映射为 Python 与 TypeScript 类型。"""
     raw = str(column_type).lower()
     if any(item in raw for item in ("int", "serial")):
         return "int", "number"

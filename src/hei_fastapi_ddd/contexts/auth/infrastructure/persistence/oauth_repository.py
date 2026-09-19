@@ -9,8 +9,8 @@ from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from hei_fastapi_ddd.contexts.auth.infrastructure.persistence.oauth_po import SysAccountOauthBinding
-from hei_fastapi_ddd.shared.exceptions.business import BusinessError
 from hei_fastapi_ddd.shared.id_generator.snowflake import generate_snowflake_id
+from hei_fastapi_ddd.types.business import BusinessError
 
 # 微信族提供商（开放平台 + 小程序），unionid 可跨端关联。
 WECHAT_FAMILY = {"WECHAT_OPEN", "WECHAT_MP"}

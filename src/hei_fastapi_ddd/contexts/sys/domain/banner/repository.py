@@ -1,26 +1,26 @@
-""" Author: Charlie
-
-banner 仓储端口。
-"""
+"""banner 仓储端口。"""
 
 from __future__ import annotations
 
-from typing import Protocol
-
-from hei_fastapi_ddd.contexts.sys.domain.banner.aggregate import Banner
+from collections.abc import Mapping
+from datetime import datetime
+from typing import Any, Protocol
 
 
 class BannerRepository(Protocol):
-    """banner 仓储协议。"""
-
-    async def find_by_id(self, id: str) -> Banner | None:
-        """按主键查找。"""
-        ...
-
-    async def save(self, entity: Banner) -> Banner:
-        """持久化聚合。"""
-        ...
-
-    async def delete_many(self, ids: list[str]) -> None:
-        """批量删除。"""
-        ...
+    async def create(self, data: Mapping[str, Any]) -> dict[str, Any]: ...
+    async def get_required(self, banner_id: str) -> dict[str, Any]: ...
+    async def get_by_id(self, banner_id: str) -> dict[str, Any] | None: ...
+    async def update(self, banner_id: str, data: Mapping[str, Any]) -> None: ...
+    async def delete_many(self, banner_ids: list[str]) -> None: ...
+    async def page_admin(
+        self, filters: Mapping[str, Any], *, offset: int, limit: int
+    ) -> tuple[list[dict[str, Any]], int]: ...
+    async def list_public(
+        self, *, now: datetime, filters: Mapping[str, Any], account_type: str
+    ) -> list[dict[str, Any]]: ...
+    async def is_public_visible(
+        self, banner_id: str, now: datetime, *, account_type: str
+    ) -> bool: ...
+    async def increment_interactions(self, deltas: dict[str, int]) -> None: ...
+    async def sync_status(self, now: datetime) -> dict[str, int]: ...

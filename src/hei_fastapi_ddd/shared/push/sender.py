@@ -7,10 +7,10 @@ from __future__ import annotations
 import logging
 
 from hei_fastapi_ddd.shared.config.reader import config_reader
-from hei_fastapi_ddd.shared.exceptions.business import BusinessError
 from hei_fastapi_ddd.shared.http.client import get_http_client
 from hei_fastapi_ddd.shared.security.safe_url import UnsafeUrlError, validate_outbound_url
 from hei_fastapi_ddd.shared.security.signature import sign_dingtalk, sign_feishu
+from hei_fastapi_ddd.types.business import BusinessError
 
 logger = logging.getLogger(__name__)
 

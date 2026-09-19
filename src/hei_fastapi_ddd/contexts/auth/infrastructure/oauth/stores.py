@@ -7,11 +7,12 @@ OAuth 一次性存储：state（授权状态）与 exchange（登录兑换码）
 """
 import json
 import secrets
-from dataclasses import asdict, dataclass
+from dataclasses import asdict
 from typing import Any
 
-from hei_fastapi_ddd.shared.exceptions.business import BusinessError
+from hei_fastapi_ddd.contexts.auth.application.api.oauth_ports import OauthStatePayload
 from hei_fastapi_ddd.shared.redis.redis import get_redis
+from hei_fastapi_ddd.types.business import BusinessError
 
 STATE_TTL_SECONDS = 10 * 60
 EXCHANGE_TTL_SECONDS = 2 * 60
@@ -37,17 +38,6 @@ def _decode(value: bytes | str | None) -> str | None:
     if value is None:
         return None
     return value.decode("utf-8") if isinstance(value, bytes) else str(value)
-
-
-@dataclass(slots=True)
-class OauthStatePayload:
-    """OAuth state 载荷（存 Redis，一次性消费）。"""
-
-    account_type: str
-    intent: str
-    provider: str
-    account_id: str | None = None
-    redirect: str | None = None
 
 
 class OauthStateStore:

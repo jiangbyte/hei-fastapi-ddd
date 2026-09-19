@@ -14,6 +14,11 @@ EXPECTED_HANDLERS = {
 
 
 def test_load_handlers_registers_expected_keys():
+    from hei_fastapi_ddd.contexts.sys.infrastructure.job.registry_loader import (
+        load_infrastructure_handlers,
+    )
+
     load_handlers()
+    load_infrastructure_handlers()
     assert EXPECTED_HANDLERS.issubset(HANDLERS.keys())
     assert "sys_file_cleanup_local_orphans" not in HANDLERS

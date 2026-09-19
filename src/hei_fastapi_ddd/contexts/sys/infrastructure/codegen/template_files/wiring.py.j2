@@ -1,0 +1,28 @@
+{# Author: Charlie #}
+# --- codegen wiring snippet for {{ main.entity_name }}（追加到 infrastructure/wiring.py）---
+from hei_fastapi_ddd.contexts.biz.application.{{ main.entity_name | snake }}.{{ main.entity_name | snake }}_application_service import (
+    {{ main.entity_name }}Service,
+{% if has_sub and sub %}
+    {{ sub.entity_name }}Service,
+{% endif %}
+)
+from hei_fastapi_ddd.contexts.biz.infrastructure.persistence.{{ main.entity_name | snake }}_repository import (
+    {{ main.entity_name }}RepositoryImpl,
+{% if has_sub and sub %}
+    {{ sub.entity_name }}RepositoryImpl,
+{% endif %}
+)
+
+
+def get_{{ main.entity_name | snake }}_service(
+    db: Annotated[AsyncSession, Depends(get_db_session)],
+) -> {{ main.entity_name }}Service:
+    return {{ main.entity_name }}Service(db, {{ main.entity_name }}RepositoryImpl(db))
+{% if has_sub and sub %}
+
+
+def get_{{ sub.entity_name | snake }}_service(
+    db: Annotated[AsyncSession, Depends(get_db_session)],
+) -> {{ sub.entity_name }}Service:
+    return {{ sub.entity_name }}Service(db, {{ sub.entity_name }}RepositoryImpl(db))
+{% endif %}

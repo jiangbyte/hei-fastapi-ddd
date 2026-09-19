@@ -5,18 +5,26 @@
 
 from __future__ import annotations
 
-from sqlalchemy import Select, delete, func, select
+from typing import Any
+
+from sqlalchemy import Select, delete, func, inspect, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from hei_fastapi_ddd.contexts.sys.domain.dict.aggregate import DictAggregate
 from hei_fastapi_ddd.contexts.sys.domain.dict.repository import DictTreeRecord
 from hei_fastapi_ddd.contexts.sys.infrastructure.persistence.dict_po import SysDict
-from hei_fastapi_ddd.shared.exceptions.business import ConflictError, NotFoundError
 from hei_fastapi_ddd.shared.id_generator.snowflake import generate_snowflake_id
 from hei_fastapi_ddd.shared.persistence.compat import like_contains
+from hei_fastapi_ddd.types.business import ConflictError, NotFoundError
 
 
-class DictRepository:
+def _row(po: SysDict) -> dict[str, Any]:
+    """PO → 行字典。"""
+    mapper = inspect(po).mapper
+    return {attr.key: getattr(po, attr.key) for attr in mapper.column_attrs}
+
+
+class DictRepositoryImpl:
     """字典仓储，负责 PO 持久化与聚合映射。"""
 
     def __init__(self, db: AsyncSession):
@@ -146,20 +154,20 @@ class DictRepository:
         items = list((await self.db.execute(stmt)).scalars().all())
         return _build_tree(items)
 
-    async def get_po_required(self, dict_id: str) -> SysDict:
-        """审计快照需要原始 PO 时使用。"""
+    async def get_row_required(self, dict_id: str) -> dict[str, Any]:
+        """按主键加载行字典。"""
         po = await self.db.get(SysDict, dict_id)
         if po is None:
             raise NotFoundError("Dict not found")
-        return po
+        return _row(po)
 
-    async def list_pos_by_ids(self, ids: list[str]) -> list[SysDict]:
-        """按 ID 列表加载 PO（用于删除审计）。"""
-        result: list[SysDict] = []
+    async def list_rows_by_ids(self, ids: list[str]) -> list[dict[str, Any]]:
+        """按 ID 列表加载行字典。"""
+        result: list[dict[str, Any]] = []
         for dict_id in ids:
             po = await self.db.get(SysDict, dict_id)
             if po is not None:
-                result.append(po)
+                result.append(_row(po))
         return result
 
     async def _get_po_by_code(self, code: str) -> SysDict | None:

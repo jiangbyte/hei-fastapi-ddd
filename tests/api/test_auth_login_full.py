@@ -12,12 +12,12 @@ from cryptography.hazmat.primitives.asymmetric import padding
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from hei_fastapi_ddd.app.factory import create_app
 from hei_fastapi_ddd.contexts.iam.domain.enums import AccountIdentityType
 from hei_fastapi_ddd.contexts.iam.infrastructure.persistence.account_po import (
     SysAccount,
     SysAccountIdentity,
 )
-from hei_fastapi_ddd.factory import create_app
 from hei_fastapi_ddd.shared.config.enums import AccountStatusEnum, AccountType
 from hei_fastapi_ddd.shared.config.settings import settings
 from hei_fastapi_ddd.shared.deps.db import get_db_session

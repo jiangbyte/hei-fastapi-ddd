@@ -14,7 +14,7 @@ from hei_fastapi_ddd.contexts.profile.infrastructure.identity_providers.mock imp
 from hei_fastapi_ddd.contexts.profile.infrastructure.identity_providers.third_party import (
     ThirdPartyIdentityVerifyProvider,
 )
-from hei_fastapi_ddd.shared.exceptions.business import BusinessError
+from hei_fastapi_ddd.types.business import BusinessError
 
 
 class IdentityVerifyProviderRegistry:

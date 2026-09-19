@@ -11,7 +11,7 @@ from hei_fastapi_ddd.contexts.iam.domain.enums import AccountIdentityType
 from hei_fastapi_ddd.shared.config.enums import AccountType, account_config_key
 from hei_fastapi_ddd.shared.config.reader import config_reader
 from hei_fastapi_ddd.shared.config.settings import settings
-from hei_fastapi_ddd.shared.exceptions.business import AuthenticationError, BusinessError
+from hei_fastapi_ddd.types.business import AuthenticationError, BusinessError
 
 
 @dataclass(frozen=True, slots=True)
@@ -184,7 +184,7 @@ def get_auth_options(account_type: AccountType) -> AuthOptions:
 
 def _oauth_provider_options(account_type: AccountType) -> list[dict]:
     """读取三方登录提供商开关，构造 auth-options 下发的入口列表。"""
-    from hei_fastapi_ddd.contexts.auth.infrastructure.oauth.provider import OauthProvider
+    from hei_fastapi_ddd.contexts.auth.domain.oauth.provider import OauthProvider
 
     options: list[dict] = []
     for provider in OauthProvider:

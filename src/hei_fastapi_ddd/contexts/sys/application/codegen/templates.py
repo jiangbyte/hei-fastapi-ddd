@@ -5,6 +5,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path, PurePosixPath
@@ -13,22 +14,32 @@ from typing import Any
 
 from jinja2 import Environment, FileSystemLoader, StrictUndefined
 
+from hei_fastapi_ddd.contexts.sys.application.codegen.dto import CodegenPreviewFile
 from hei_fastapi_ddd.contexts.sys.application.codegen.paths import (
     frontend_api_export_path,
     frontend_api_file_path,
     frontend_api_index_append_path,
     frontend_view_path,
 )
-from hei_fastapi_ddd.contexts.sys.infrastructure.persistence.codegen_po import (
-    SysCodegenField,
-    SysCodegenPlan,
-)
-from hei_fastapi_ddd.contexts.sys.interfaces.http.codegen_schemas import CodegenPreviewFile
 from hei_fastapi_ddd.shared.config.settings import settings
 from hei_fastapi_ddd.shared.id_generator.snowflake import generate_snowflake_id
 from hei_fastapi_ddd.shared.persistence.compat import dialect_name_from_url
 
 AUDIT_COLUMNS = {"created_at", "created_by", "updated_at", "updated_by"}
+
+
+class _RowView:
+    """字典行的属性访问包装，供 Jinja 与字段函数使用。"""
+
+    __slots__ = ("_data",)
+
+    def __init__(self, data: Mapping[str, Any]):
+        self._data = dict(data)
+
+    def __getattr__(self, name: str) -> Any:
+        if name in self._data:
+            return self._data[name]
+        raise AttributeError(name)
 
 
 def permission_prefix_key(prefix: str) -> str:
@@ -38,7 +49,7 @@ def permission_prefix_key(prefix: str) -> str:
     一律使用该函数清洗后的前缀，避免用户输入带 - / _ 的前缀产生非法权限码。
     """
     return sub(r"[-_]", "", prefix or "")
-TEMPLATE_DIR = Path(__file__).resolve().parent / "template_files"
+TEMPLATE_DIR = Path(__file__).resolve().parents[2] / "infrastructure" / "codegen" / "template_files"
 MENU_PERMISSION_ACTIONS = (
     ("page", "分页", 10),
     ("create", "新增", 20),
@@ -56,9 +67,9 @@ TREE_MENU_PERMISSION_ACTION = ("list", "树列表", 90)
 class RenderContext:
     """模板渲染上下文：封装方案与字段并派生各类路径。"""
 
-    plan: SysCodegenPlan
-    main_fields: list[SysCodegenField]
-    sub_fields: list[SysCodegenField]
+    plan: _RowView
+    main_fields: list[_RowView]
+    sub_fields: list[_RowView]
     generated_at: str
 
     @property
@@ -70,27 +81,47 @@ class RenderContext:
         )
 
     @property
+    def entity_snake(self) -> str:
+        # 实体包名：module_path 最后一段或整段拼成 snake
+        parts = self.backend_parts
+        return parts[-1] if parts else "entity"
+
+    @property
+    def bc_import(self) -> str:
+        return "hei_fastapi_ddd.contexts.biz"
+
+    @property
     def module_import(self) -> str:
-        # 生成代码落在 biz 限界上下文的应用/基础设施包路径约定
-        return ".".join(
-            [
-                "hei_fastapi_ddd.contexts.biz",
-                *self.backend_parts,
-            ]
-        )
+        # 兼容旧模板：指向 application 实体包
+        return f"{self.bc_import}.application.{self.entity_snake}"
 
     @property
     def module_name(self) -> str:
-        return ".".join(self.backend_parts)
+        return self.entity_snake
 
     @property
     def backend_dir(self) -> str:
-        return "/".join(
-            [
-                "src/hei_fastapi_ddd/contexts/biz",
-                *self.backend_parts,
-            ]
-        )
+        return f"src/hei_fastapi_ddd/contexts/biz/application/{self.entity_snake}"
+
+    @property
+    def api_dir(self) -> str:
+        return "src/hei_fastapi_ddd/contexts/biz/api"
+
+    @property
+    def domain_dir(self) -> str:
+        return f"src/hei_fastapi_ddd/contexts/biz/domain/{self.entity_snake}"
+
+    @property
+    def infra_persistence_dir(self) -> str:
+        return "src/hei_fastapi_ddd/contexts/biz/infrastructure/persistence"
+
+    @property
+    def infra_wiring_path(self) -> str:
+        return "src/hei_fastapi_ddd/contexts/biz/infrastructure/wiring.py"
+
+    @property
+    def trigger_dir(self) -> str:
+        return "src/hei_fastapi_ddd/contexts/biz/trigger/http"
 
     @property
     def view_path(self) -> str:
@@ -116,40 +147,46 @@ class RenderContext:
 
 
 def render_files(
-    plan: SysCodegenPlan,
-    main_fields: list[SysCodegenField],
-    sub_fields: list[SysCodegenField],
+    plan: Mapping[str, Any],
+    main_fields: list[Mapping[str, Any]],
+    sub_fields: list[Mapping[str, Any]],
 ) -> list[CodegenPreviewFile]:
     """根据方案与字段渲染全部生成文件。"""
+    plan_view = _RowView(plan)
     ctx = RenderContext(
-        plan=plan,
-        main_fields=main_fields,
-        sub_fields=sub_fields,
+        plan=plan_view,
+        main_fields=[_RowView(item) for item in main_fields],
+        sub_fields=[_RowView(item) for item in sub_fields],
         generated_at=datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
     )
+    entity = snake_case(plan_view.entity_name)
     file_specs = [
         (f"{ctx.backend_dir}/__init__.py", "python", "init.py.j2"),
-        (f"{ctx.backend_dir}/model.py", "python", "model.py.j2"),
-        (f"{ctx.backend_dir}/schema.py", "python", "schema.py.j2"),
-        (f"{ctx.backend_dir}/repository.py", "python", "repository.py.j2"),
-        (f"{ctx.backend_dir}/service.py", "python", "service.py.j2"),
-        (f"{ctx.backend_dir}/router.py", "python", "router.py.j2"),
+        (f"{ctx.domain_dir}/__init__.py", "python", "init.py.j2"),
+        (f"{ctx.domain_dir}/repository.py", "python", "domain_repository.py.j2"),
+        (f"{ctx.api_dir}/{entity}_schemas.py", "python", "schema.py.j2"),
+        (f"{ctx.backend_dir}/dto.py", "python", "dto.py.j2"),
+        (f"{ctx.backend_dir}/{entity}_application_service.py", "python", "service.py.j2"),
+        (f"{ctx.infra_persistence_dir}/{entity}_po.py", "python", "model.py.j2"),
+        (f"{ctx.infra_persistence_dir}/{entity}_repository.py", "python", "repository.py.j2"),
+        (f"{ctx.trigger_dir}/{entity}_router.py", "python", "router.py.j2"),
+        (f"{ctx.infra_wiring_path}.append", "python", "wiring.py.j2"),
         (ctx.api_file, "typescript", "api.ts.j2"),
         (frontend_api_index_append_path(), "typescript", "api_index_export.ts.j2"),
         (ctx.view_path, "vue", "index.vue.j2"),
         (f"{ctx.view_component_dir}/ModalForm.vue", "vue", "modal_form.vue.j2"),
         (f"{ctx.view_component_dir}/ModalDetail.vue", "vue", "modal_detail.vue.j2"),
         (
-            f"scripts/{snake_case(plan.entity_name)}_menu_permission.sql",
+            f"scripts/{snake_case(plan_view.entity_name)}_menu_permission.sql",
             "sql",
             "menu_permission.sql.j2",
         ),
     ]
     if (
-        plan.gen_type in {"LEFT_TREE_TABLE", "MASTER_DETAIL"}
-        and plan.sub_entity_name
-        and plan.sub_table
-        and plan.sub_pk
+        plan_view.gen_type in {"LEFT_TREE_TABLE", "MASTER_DETAIL"}
+        and plan_view.sub_entity_name
+        and plan_view.sub_table
+        and plan_view.sub_pk
     ):
         file_specs.extend(
             [
@@ -252,7 +289,7 @@ def entity_context(
     entity_name: str | None,
     table_name: str | None,
     pk_name: str | None,
-    fields: list[SysCodegenField],
+    fields: list[_RowView],
     table_exclude: set[str] | None = None,
 ) -> dict[str, Any]:
     """构造实体渲染上下文（模型/表单/查询/表格/详情字段）。"""
@@ -342,7 +379,7 @@ def menu_permission_context(needs_list_permission: bool) -> dict[str, Any]:
     }
 
 
-def field_context(field: SysCodegenField) -> dict[str, Any]:
+def field_context(field: _RowView) -> dict[str, Any]:
     """将字段配置转为模板所需上下文。"""
     python_type = normalized_py_type(field)
     is_datetime = field.widget == "datetime" or python_type == "datetime"
@@ -376,14 +413,14 @@ def field_context(field: SysCodegenField) -> dict[str, Any]:
     }
 
 
-def is_form_field(field: SysCodegenField) -> bool:
+def is_form_field(field: _RowView) -> bool:
     """判断字段是否出现在表单中。"""
     return (
         field.in_form and not field.primary_key and field.column_name not in AUDIT_COLUMNS
     )
 
 
-def normalized_py_type(field: SysCodegenField) -> str:
+def normalized_py_type(field: _RowView) -> str:
     """归一化 Python 类型表示。"""
     if field.value_type == "datetime":
         return "datetime"
@@ -392,7 +429,7 @@ def normalized_py_type(field: SysCodegenField) -> str:
     return field.value_type
 
 
-def is_json_field(field: SysCodegenField, python_type: str | None = None) -> bool:
+def is_json_field(field: _RowView, python_type: str | None = None) -> bool:
     """判断字段是否为 JSON 类型。"""
     raw_python_type = python_type or normalized_py_type(field)
     return raw_python_type in {"dict", "dict[str, Any]"} or "json" in field.db_type.lower()
@@ -404,7 +441,7 @@ def _wire_schema_type(raw: str) -> str:
     return mapping.get(raw, raw)
 
 
-def schema_py_type(field: SysCodegenField) -> str:
+def schema_py_type(field: _RowView) -> str:
     """构造 schema 字段的 Python 类型标注。"""
     raw = _wire_schema_type(normalized_py_type(field))
     if field.nullable and not field.primary_key:
@@ -412,7 +449,7 @@ def schema_py_type(field: SysCodegenField) -> str:
     return raw
 
 
-def query_schema_py_type(field: SysCodegenField) -> str:
+def query_schema_py_type(field: _RowView) -> str:
     """构造查询 schema 字段的 Python 类型标注。"""
     raw = _wire_schema_type(normalized_py_type(field))
     if raw.endswith(" | None"):
@@ -420,7 +457,7 @@ def query_schema_py_type(field: SysCodegenField) -> str:
     return f"{raw} | None"
 
 
-def schema_default(field: SysCodegenField) -> str:
+def schema_default(field: _RowView) -> str:
     """推断 schema 字段的默认值表达式。"""
     if field.primary_key or field.required:
         return ""
@@ -435,7 +472,7 @@ def schema_default(field: SysCodegenField) -> str:
     return ""
 
 
-def sa_type(field: SysCodegenField) -> str:
+def sa_type(field: _RowView) -> str:
     """将数据库类型映射为 SQLAlchemy 列类型。"""
     raw = field.db_type.lower()
     if "json" in raw:
@@ -457,7 +494,7 @@ def sa_type(field: SysCodegenField) -> str:
     return "String(255)"
 
 
-def vue_default(field: SysCodegenField | dict[str, Any]) -> str:
+def vue_default(field: _RowView | dict[str, Any]) -> str:
     """推断前端表单字段的默认值表达式。"""
     if isinstance(field, dict):
         python_type = field["python_type"]
@@ -467,7 +504,7 @@ def vue_default(field: SysCodegenField | dict[str, Any]) -> str:
         form_widget = field.widget
     if isinstance(field, dict) and "is_json" in field:
         is_json = field["is_json"]
-    elif isinstance(field, SysCodegenField):
+    elif isinstance(field, _RowView):
         is_json = is_json_field(field)
     else:
         is_json = python_type in {"dict", "dict[str, Any]"}

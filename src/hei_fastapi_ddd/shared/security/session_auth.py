@@ -9,11 +9,11 @@ import asyncio
 from starlette.requests import Request
 
 from hei_fastapi_ddd.shared.config.settings import settings
-from hei_fastapi_ddd.shared.exceptions.business import AuthenticationError
 from hei_fastapi_ddd.shared.network.client_ip import get_client_ip
 from hei_fastapi_ddd.shared.observability.context import account_id_ctx, account_type_ctx
 from hei_fastapi_ddd.shared.security.session import SessionPayload, session_store
 from hei_fastapi_ddd.shared.security.session_token import extract_session_token
+from hei_fastapi_ddd.types.business import AuthenticationError
 
 _STATE_SESSION = "hei_session"
 _STATE_TOKEN = "hei_session_token"

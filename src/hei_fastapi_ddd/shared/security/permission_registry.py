@@ -264,7 +264,7 @@ async def ensure_registered_permission_keys(permission_keys: list[str]) -> None:
         if permission_key not in registered_permission_keys
     ]
     if missing_permission_keys:
-        from hei_fastapi_ddd.shared.exceptions.business import BusinessError
+        from hei_fastapi_ddd.types.business import BusinessError
 
         raise BusinessError(
             "Permission is not registered in Redis: " + ", ".join(missing_permission_keys)

@@ -1,0 +1,98 @@
+{# Author: Charlie #}
+"""
+由 HEI 代码生成器生成。
+Author: {{ plan.author }}
+生成时间：{{ ctx.generated_at }}
+"""
+
+from datetime import datetime
+{% if main.has_form_json or main.has_detail_json or (has_sub and sub and (sub.has_form_json or sub.has_detail_json)) %}
+from typing import Any
+{% endif %}
+
+from pydantic import Field{% if has_tree %}, field_serializer{% endif %}
+
+from hei_fastapi_ddd.shared.schema.base import ApiSchema, Id
+from hei_fastapi_ddd.shared.web.pagination import PageQuery
+{% set use_bool = main.uses_wire_bool or (has_sub and sub and sub.uses_wire_bool) %}
+{% set use_int = main.uses_wire_int or (has_sub and sub and sub.uses_wire_int) %}
+{% set use_float = main.uses_wire_float or (has_sub and sub and sub.uses_wire_float) %}
+{% if use_bool or use_int or use_float -%}
+from hei_fastapi_ddd.shared.schema.wire import {% if use_bool %}WireBool{% if use_int or use_float %}, {% endif %}{% endif %}{% if use_int %}WireInt{% if use_float %}, {% endif %}{% endif %}{% if use_float %}WireFloat{% endif %}
+
+{% endif %}
+
+class {{ main.entity_name }}CreateRequest(ApiSchema):
+{% for field in main.form_fields %}
+    {{ field.name }}: {{ field.schema_type }}{{ field.default }}
+{% else %}
+    pass
+{% endfor %}
+
+
+class {{ main.entity_name }}UpdateRequest({{ main.entity_name }}CreateRequest):
+    {{ main.pk_name }}: Id
+
+
+class {{ main.entity_name }}AdminPageQuery(PageQuery):
+{% for field in main.query_fields %}
+    {{ field.name }}: {{ field.query_schema_type }} = None
+{% else %}
+    keyword: str | None = None
+{% endfor %}
+
+
+class {{ main.entity_name }}Schema(ApiSchema):
+{% for field in main.detail_fields %}
+    {{ field.name }}: {{ field.schema_type }}{{ field.default }}
+{% endfor %}
+    created_at: datetime
+    created_by: str | None = None
+    owner_dept_id: str | None = None
+    updated_at: datetime
+    updated_by: str | None = None{% if has_tree %}
+    children: list["{{ main.entity_name }}TreeNode"] = Field(default_factory=list)
+
+
+class {{ main.entity_name }}DetailSchema({{ main.entity_name }}Schema):
+    {{ plan.tree_parent_field }}_name: str | None = None
+
+
+class {{ main.entity_name }}TreeNode({{ main.entity_name }}Schema):
+    weight: WireInt | None = None
+    children: list["{{ main.entity_name }}TreeNode"] | None = Field(default=None)
+
+    @field_serializer("children", when_used="json")
+    def _omit_empty_children(self, value: list["{{ main.entity_name }}TreeNode"] | None):
+        return value or None
+{% endif %}
+{% if has_sub and sub %}
+
+
+class {{ sub.entity_name }}CreateRequest(ApiSchema):
+{% for field in sub.form_fields %}
+    {{ field.name }}: {{ field.schema_type }}{{ field.default }}
+{% else %}
+    pass
+{% endfor %}
+
+
+class {{ sub.entity_name }}UpdateRequest({{ sub.entity_name }}CreateRequest):
+    {{ sub.pk_name }}: Id
+
+
+class {{ sub.entity_name }}AdminPageQuery(PageQuery):
+    {{ plan.sub_foreign_key }}: str | None = Field(default=None, max_length=64)
+{% for field in sub.query_fields if field.name != plan.sub_foreign_key %}
+    {{ field.name }}: {{ field.query_schema_type }} = None
+{% endfor %}
+
+
+class {{ sub.entity_name }}Schema(ApiSchema):
+{% for field in sub.detail_fields %}
+    {{ field.name }}: {{ field.schema_type }}{{ field.default }}
+{% endfor %}
+    created_at: datetime
+    created_by: str | None = None
+    updated_at: datetime
+    updated_by: str | None = None{% endif %}

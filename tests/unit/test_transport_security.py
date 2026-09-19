@@ -7,13 +7,13 @@ import pytest
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import padding
 
-from hei_fastapi_ddd.shared.exceptions.business import BusinessError
 from hei_fastapi_ddd.shared.security.transport import (
     create_captcha,
     create_password_key,
     decrypt_passwords,
     verify_captcha,
 )
+from hei_fastapi_ddd.types.business import BusinessError
 
 
 async def test_captcha_returns_base64_and_is_single_use(monkeypatch):

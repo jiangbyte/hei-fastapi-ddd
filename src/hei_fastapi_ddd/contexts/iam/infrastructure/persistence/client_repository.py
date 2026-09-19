@@ -3,10 +3,14 @@
 客户端模块/资源仓储：负责客户端模块与客户端资源树的增删改查及权限挂载。
 """
 
+from collections.abc import Mapping
+from typing import Any
+from hei_fastapi_ddd.contexts.iam.infrastructure.persistence.mapping_util import mapping_data
+
 from sqlalchemy import Select, delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from hei_fastapi_ddd.contexts.iam.application.reference_guard import (
+from hei_fastapi_ddd.contexts.iam.infrastructure.persistence.reference_guard import (
     ensure_not_self_or_descendant,
     list_descendant_ids_many,
 )
@@ -24,22 +28,8 @@ from hei_fastapi_ddd.contexts.iam.infrastructure.persistence.relation_po import 
 from hei_fastapi_ddd.contexts.iam.infrastructure.persistence.relation_repository import (
     IamRelationRepository,
 )
-from hei_fastapi_ddd.contexts.iam.interfaces.http.client_schemas import (
-    ClientModuleAdminPageQuery,
-    ClientModuleCreateRequest,
-    ClientModuleUpdateRequest,
-    ClientResourceAdminPageQuery,
-    ClientResourceCreateRequest,
-    ClientResourcePermissionBindRequest,
-    ClientResourceUpdateRequest,
-)
-from hei_fastapi_ddd.contexts.iam.interfaces.http.iam_schemas import (
-    ResourceGrantMenuOption,
-    ResourceGrantModuleOption,
-    ResourcePermissionOption,
-)
 from hei_fastapi_ddd.shared.config.enums import AccountType, StatusEnum
-from hei_fastapi_ddd.shared.exceptions.business import ConflictError, NotFoundError
+from hei_fastapi_ddd.types.business import ConflictError, NotFoundError
 
 
 class ClientModuleRepository:
@@ -48,10 +38,10 @@ class ClientModuleRepository:
     def __init__(self, db: AsyncSession):
         self.db = db
 
-    async def create(self, payload: ClientModuleCreateRequest) -> SysClientModule:
+    async def create(self, payload: Mapping[str, Any]) -> SysClientModule:
         """创建客户端模块，编码已存在时抛冲突错误。"""
-        await self._ensure_code_unique(payload.code)
-        entity = SysClientModule(**payload.model_dump())
+        await self._ensure_code_unique(payload["code"])
+        entity = SysClientModule(**mapping_data(payload))
         self.db.add(entity)
         await self.db.flush()
         return entity
@@ -67,11 +57,11 @@ class ClientModuleRepository:
             raise NotFoundError("Client module not found")
         return entity
 
-    async def update(self, payload: ClientModuleUpdateRequest) -> None:
+    async def update(self, payload: Mapping[str, Any]) -> None:
         """更新客户端模块，编码被其他模块占用时抛冲突错误。"""
-        entity = await self.get_required(payload.id)
-        await self._ensure_code_unique(payload.code, payload.id)
-        for key, value in payload.model_dump(exclude={"id"}).items():
+        entity = await self.get_required(payload["id"])
+        await self._ensure_code_unique(payload["code"], payload["id"])
+        for key, value in mapping_data(payload).items():
             setattr(entity, key, value)
         await self.db.flush()
 
@@ -106,27 +96,30 @@ class ClientModuleRepository:
 
     async def page_admin(
         self,
-        query: ClientModuleAdminPageQuery,
+        query: Mapping[str, Any],
     ) -> tuple[list[SysClientModule], int]:
         """按条件分页查询客户端模块并统计总数。"""
         stmt: Select[tuple[SysClientModule]] = select(SysClientModule)
         count_stmt = select(func.count(SysClientModule.id))
         filters = []
-        if query.name:
-            filters.append(SysClientModule.name.contains(query.name))
-        if query.code:
-            filters.append(SysClientModule.code.contains(query.code))
-        if query.status:
-            filters.append(SysClientModule.status == query.status)
-        if query.account_type:
-            filters.append(SysClientModule.account_type == query.account_type.value)
+        if query["name"]:
+            filters.append(SysClientModule.name.contains(query["name"]))
+        if query["code"]:
+            filters.append(SysClientModule.code.contains(query["code"]))
+        if query["status"]:
+            filters.append(SysClientModule.status == query["status"])
+        if query.get("account_type"):
+            account_type = query["account_type"]
+            filters.append(
+                SysClientModule.account_type == getattr(account_type, "value", account_type)
+            )
         if filters:
             stmt = stmt.where(*filters)
             count_stmt = count_stmt.where(*filters)
         stmt = (
             stmt.order_by(SysClientModule.sort.asc())
-            .offset(query.offset)
-            .limit(query.size)
+            .offset(query["offset"])
+            .limit(query["size"])
         )
         items = list((await self.db.execute(stmt)).scalars().all())
         total = (await self.db.execute(count_stmt)).scalar_one()
@@ -162,10 +155,10 @@ class ClientResourceRepository:
         self.db = db
         self.relations = IamRelationRepository(db)
 
-    async def create(self, payload: ClientResourceCreateRequest) -> SysClientResource:
+    async def create(self, payload: Mapping[str, Any]) -> SysClientResource:
         """创建客户端资源节点，先校验模块、父级与编码合法性。"""
         await self._ensure_payload_valid(payload)
-        entity = SysClientResource(**payload.model_dump())
+        entity = SysClientResource(**mapping_data(payload))
         self.db.add(entity)
         await self.db.flush()
         return entity
@@ -181,18 +174,18 @@ class ClientResourceRepository:
             raise NotFoundError("Client resource not found")
         return entity
 
-    async def update(self, payload: ClientResourceUpdateRequest) -> None:
+    async def update(self, payload: Mapping[str, Any]) -> None:
         """更新客户端资源，校验层级与编码合法性。"""
-        entity = await self.get_required(payload.id)
+        entity = await self.get_required(payload["id"])
         await ensure_not_self_or_descendant(
             self.db,
             SysClientResource,
-            payload.id,
-            payload.parent_id,
+            payload["id"],
+            payload["parent_id"],
             "Client resource",
         )
-        await self._ensure_payload_valid(payload, payload.id)
-        for key, value in payload.model_dump(exclude={"id"}).items():
+        await self._ensure_payload_valid(payload, payload["id"])
+        for key, value in mapping_data(payload).items():
             setattr(entity, key, value)
         await self.db.flush()
 
@@ -221,31 +214,31 @@ class ClientResourceRepository:
 
     async def page_admin(
         self,
-        query: ClientResourceAdminPageQuery,
+        query: Mapping[str, Any],
     ) -> tuple[list[SysClientResource], int]:
         """按条件分页查询客户端资源并统计总数。"""
         stmt: Select[tuple[SysClientResource]] = select(SysClientResource)
         count_stmt = select(func.count(SysClientResource.id))
         filters = []
-        if query.code:
-            filters.append(SysClientResource.code.contains(query.code))
-        if query.name:
-            filters.append(SysClientResource.name.contains(query.name))
-        if query.resource_type:
-            filters.append(SysClientResource.resource_type == query.resource_type.value)
-        if query.module_id:
-            filters.append(SysClientResource.module_id == query.module_id)
-        if query.parent_id:
-            filters.append(SysClientResource.parent_id == query.parent_id)
-        if query.status:
-            filters.append(SysClientResource.status == query.status)
+        if query["code"]:
+            filters.append(SysClientResource.code.contains(query["code"]))
+        if query["name"]:
+            filters.append(SysClientResource.name.contains(query["name"]))
+        if query["resource_type"]:
+            filters.append(SysClientResource.resource_type == query["resource_type"].value)
+        if query["module_id"]:
+            filters.append(SysClientResource.module_id == query["module_id"])
+        if query["parent_id"]:
+            filters.append(SysClientResource.parent_id == query["parent_id"])
+        if query["status"]:
+            filters.append(SysClientResource.status == query["status"])
         if filters:
             stmt = stmt.where(*filters)
             count_stmt = count_stmt.where(*filters)
         stmt = (
             stmt.order_by(SysClientResource.sort.asc())
-            .offset(query.offset)
-            .limit(query.size)
+            .offset(query["offset"])
+            .limit(query["size"])
         )
         items = list((await self.db.execute(stmt)).scalars().all())
         total = (await self.db.execute(count_stmt)).scalar_one()
@@ -294,26 +287,28 @@ class ClientResourceRepository:
 
     async def bind_permission(
         self,
-        payload: ClientResourcePermissionBindRequest,
+        payload: Mapping[str, Any],
     ) -> SysIamRelation:
         """替换客户端资源的权限挂载并返回新关系。"""
-        if not await self.db.get(SysClientResource, payload.resource_id):
+        if not await self.db.get(SysClientResource, payload["resource_id"]):
             raise NotFoundError("Client resource not found")
+        account_type = payload["account_type"]
+        account_type_value = getattr(account_type, "value", account_type)
         await self.relations.delete_subject_relations(
             IamRelationSubjectType.CLIENT_RESOURCE.value,
-            payload.resource_id,
+            payload["resource_id"],
             IamRelationType.CLIENT_RESOURCE_PERMISSION,
-            account_type=payload.account_type.value,
-            target_key=payload.permission_key,
+            account_type=account_type_value,
+            target_key=payload["permission_key"],
         )
         relation = self.relations.client_resource_permission(
-            payload.resource_id,
-            payload.permission_key,
-            payload.account_type,
-            data_scope=payload.data_scope,
-            custom_scope_dept_ids=payload.custom_scope_dept_ids,
-            sort=payload.sort,
-            description=payload.description,
+            payload["resource_id"],
+            payload["permission_key"],
+            payload["account_type"],
+            data_scope=payload["data_scope"],
+            custom_scope_dept_ids=payload["custom_scope_dept_ids"],
+            sort=payload["sort"],
+            description=payload["description"],
         )
         self.db.add(relation)
         await self.db.flush()
@@ -341,23 +336,18 @@ class ClientResourceRepository:
     async def list_all_client_resource_grant_modules(
         self,
         account_type: AccountType | None = None,
-    ) -> list[ResourceGrantModuleOption]:
+    ) -> list[dict[str, Any]]:
         """组装授权页所需的客户端资源模块树（模块-菜单-按钮/权限）。"""
         resources = await self.list_resources(account_type=account_type)
         permissions = await self.list_client_resource_permissions(account_type=account_type)
         modules = await ClientModuleRepository(self.db).list_enabled(account_type=account_type)
-        permission_map: dict[str, list[ResourcePermissionOption]] = {}
+        permission_map: dict[str, list[dict[str, Any]]] = {}
         for permission in permissions:
             permission_map.setdefault(permission.subject_id, []).append(
-                ResourcePermissionOption(
-                    id=permission.id,
-                    permission_key=permission.target_key,
-                    title=permission.description or permission.target_key,
-                    data_scope=permission.data_scope,
-                )
+                {"id": permission.id, "permission_key": permission.target_key, "title": permission.description or permission.target_key, "data_scope": permission.data_scope}
             )
         resource_map = {resource.id: resource for resource in resources}
-        child_permission_map: dict[str, list[ResourcePermissionOption]] = {}
+        child_permission_map: dict[str, list[dict[str, Any]]] = {}
         for resource in resources:
             if resource.resource_type not in {ResourceType.BUTTON.value, ResourceType.ACTION.value}:
                 continue
@@ -366,15 +356,11 @@ class ClientResourceRepository:
             options = permission_map.get(resource.id)
             if not options:
                 options = [
-                    ResourcePermissionOption(
-                        id=resource.id,
-                        permission_key=resource.code,
-                        title=resource.name,
-                    )
+                    {"id": resource.id, "permission_key": resource.code, "title": resource.name}
                 ]
             child_permission_map.setdefault(resource.parent_id, []).extend(options)
-        module_map: dict[str, ResourceGrantModuleOption] = {
-            module.id: ResourceGrantModuleOption(id=module.id, title=module.name, menu=[])
+        module_map: dict[str, dict[str, Any]] = {
+            module.id: {"id": module.id, "title": module.name, "menu": []}
             for module in modules
         }
         module_sort_map = {module.id: module.sort for module in modules}
@@ -390,44 +376,44 @@ class ClientResourceRepository:
                 continue
             module = module_map.setdefault(
                 resource.module_id,
-                ResourceGrantModuleOption(id=resource.module_id, title=resource.module_id, menu=[]),
+                {"id": resource.module_id, "title": resource.module_id, "menu": []},
             )
             parent = resource_map.get(resource.parent_id or "")
-            module.menu.append(
-                ResourceGrantMenuOption(
-                    id=resource.id,
-                    module_id=resource.module_id,
-                    parent_id=resource.parent_id,
-                    parent_id_name=parent.name if parent else resource.name,
-                    title=resource.name,
-                    button=(
+            module["menu"].append(
+                {
+                    "id": resource.id,
+                    "module_id": resource.module_id,
+                    "parent_id": resource.parent_id,
+                    "parent_id_name": parent.name if parent else resource.name,
+                    "title": resource.name,
+                    "button": (
                         permission_map.get(resource.id, [])
                         + child_permission_map.get(resource.id, [])
                     ),
-                )
+                }
             )
         return sorted(
-            [module for module in module_map.values() if module.menu],
-            key=lambda item: (module_sort_map.get(item.id, 99), item.id),
+            [module for module in module_map.values() if module["menu"]],
+            key=lambda item: (module_sort_map.get(item["id"], 99), item["id"]),
         )
 
     async def _ensure_payload_valid(
         self,
-        payload: ClientResourceCreateRequest | ClientResourceUpdateRequest,
+        payload: Mapping[str, Any] | Mapping[str, Any],
         resource_id: str | None = None,
     ) -> None:
         """校验模块存在、编码唯一及父级关系合法。"""
-        if payload.module_id and not await self.db.get(SysClientModule, payload.module_id):
+        if payload["module_id"] and not await self.db.get(SysClientModule, payload["module_id"]):
             raise ConflictError("Client module does not exist")
-        await self._ensure_code_unique(payload.code, payload.module_id, resource_id)
-        if not payload.parent_id:
+        await self._ensure_code_unique(payload["code"], payload["module_id"], resource_id)
+        if not payload["parent_id"]:
             return
-        parent = await self.db.get(SysClientResource, payload.parent_id)
+        parent = await self.db.get(SysClientResource, payload["parent_id"])
         if parent is None:
             raise ConflictError("Client resource parent does not exist")
         if resource_id is not None and parent.id == resource_id:
             raise ConflictError("Client resource parent cannot be itself")
-        if payload.module_id and parent.module_id and parent.module_id != payload.module_id:
+        if payload["module_id"] and parent.module_id and parent.module_id != payload["module_id"]:
             raise ConflictError("Client resource parent module mismatch")
 
     async def _ensure_code_unique(

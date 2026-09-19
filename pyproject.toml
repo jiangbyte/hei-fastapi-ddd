@@ -1,7 +1,7 @@
 [project]
 name = "hei-fastapi-ddd"
 version = "1.1.0-beta"
-description = "DDD-oriented FastAPI scaffold with bounded contexts; API contract parity with hei-fastapi."
+description = "常见六层工程模型的 FastAPI DDD 脚手架；对外契约与 hei-fastapi 对齐。"
 readme = "README.md"
 requires-python = ">=3.11"
 license = "Apache-2.0"

@@ -3,7 +3,7 @@
 用户侧实名视图脱敏（对齐 hei-boot IdentityUserViewSupport）。
 """
 
-from hei_fastapi_ddd.contexts.profile.interfaces.http.identity_schemas import (
+from hei_fastapi_ddd.contexts.profile.application.identity.dto import (
     IdentityStatusResponse,
     RealNameCaseSummaryResponse,
 )

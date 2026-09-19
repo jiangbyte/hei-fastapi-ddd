@@ -3,18 +3,17 @@
 账户会话服务：从授权信息构建/刷新会话载荷，并代理会话存储的删除操作。
 """
 
+from __future__ import annotations
+
+from collections.abc import Mapping
 from datetime import UTC, datetime, timedelta
+from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from hei_fastapi_ddd.contexts.iam.application.api.account_api_adapter import (
-    AccountApiAdapter as AccountRepository,
-)
+from hei_fastapi_ddd.contexts.iam.application.api.account_api import AccountApi
+from hei_fastapi_ddd.contexts.iam.domain.relation.repository import IamRelationRepositoryPort
 from hei_fastapi_ddd.contexts.iam.domain.role.constants import SUPER_ADMIN_ROLE_CODE
-from hei_fastapi_ddd.contexts.iam.infrastructure.persistence.account_po import SysAccount
-from hei_fastapi_ddd.contexts.iam.infrastructure.persistence.relation_repository import (
-    IamRelationRepository,
-)
 from hei_fastapi_ddd.shared.config.settings import settings
 from hei_fastapi_ddd.shared.security.session import SessionPayload, session_store
 
@@ -22,15 +21,21 @@ from hei_fastapi_ddd.shared.security.session import SessionPayload, session_stor
 class AccountSessionService:
     """构建并刷新账户会话，不依赖 auth 业务流程。"""
 
-    def __init__(self, db: AsyncSession):
-        """初始化账户与关系仓储。"""
+    def __init__(
+        self,
+        db: AsyncSession,
+        *,
+        account_api: AccountApi,
+        relation_repo: IamRelationRepositoryPort,
+    ):
+        """初始化账户与关系端口。"""
         self.db = db
-        self.account_repo = AccountRepository(db)
-        self.relation_repo = IamRelationRepository(db)
+        self.account_api = account_api
+        self.relation_repo = relation_repo
 
     async def build_session_payload(
         self,
-        account: SysAccount,
+        account: Mapping[str, Any],
         token: str,
         *,
         remember_me: bool = True,
@@ -40,7 +45,7 @@ class AccountSessionService:
         device_label: str | None = None,
     ) -> SessionPayload:
         """根据账户授权构建会话载荷。"""
-        authorization = await self.relation_repo.get_account_authorization(account.id)
+        authorization = await self.relation_repo.get_account_authorization(str(account["id"]))
         return self._build_session_payload_from_authorization(
             account,
             token,
@@ -58,23 +63,23 @@ class AccountSessionService:
 
     async def refresh_accounts_sessions(self, account_ids: list[str]) -> None:
         """批量刷新账户的在线会话（重新计算授权）。"""
-        accounts = await self.account_repo.list_accounts_by_ids(account_ids)
+        accounts = await self.account_api.list_accounts_by_ids(account_ids)
         if not accounts:
             return
-        account_map = {account.id: account for account in accounts}
         authorizations = await self.relation_repo.get_accounts_authorization(
-            list(account_map.keys())
+            [str(item["id"]) for item in accounts]
         )
-        targets = [(account.account_type, account.id) for account in accounts]
+        targets = [(str(account["account_type"]), str(account["id"])) for account in accounts]
         payload_factories = {}
 
         for account in accounts:
-            authorization = authorizations[account.id]
+            account_id = str(account["id"])
+            authorization = authorizations[account_id]
 
             async def payload_factory(
                 token: str,
                 old: SessionPayload,
-                current_account: SysAccount = account,
+                current_account: Mapping[str, Any] = account,
                 current_authorization: dict = authorization,
             ) -> SessionPayload:
                 return self._build_session_payload_from_authorization(
@@ -84,7 +89,7 @@ class AccountSessionService:
                     remember_me=old.remember_me,
                 )
 
-            payload_factories[(account.account_type, account.id)] = payload_factory
+            payload_factories[(str(account["account_type"]), account_id)] = payload_factory
 
         await session_store.refresh_accounts_sessions(targets, payload_factories)
 
@@ -98,7 +103,7 @@ class AccountSessionService:
 
     def _build_session_payload_from_authorization(
         self,
-        account: SysAccount,
+        account: Mapping[str, Any],
         token: str,
         authorization: dict,
         *,
@@ -116,14 +121,14 @@ class AccountSessionService:
         expires_at = now + timedelta(seconds=settings.auth.token_ttl_seconds)
         return SessionPayload(
             token=token,
-            account_id=account.id,
-            account_type=account.account_type,
+            account_id=str(account["id"]),
+            account_type=str(account["account_type"]),
             remember_me=remember_me,
             password_expired=password_expired,
             role_ids=authorization["role_ids"],
             dept_ids=authorization["dept_ids"],
             group_ids=authorization["group_ids"],
-            resource_ids=[],  # 菜单/按钮资源不进会话（对齐 hei-boot issueSession）
+            resource_ids=[],
             permission_keys=sorted(permission_keys),
             permission_grants=authorization["permission_grants"],
             client_resource_ids=list(authorization.get("client_resource_ids") or []),

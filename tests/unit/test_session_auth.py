@@ -7,9 +7,9 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from hei_fastapi_ddd.shared.exceptions.business import AuthenticationError
 from hei_fastapi_ddd.shared.security import session_auth
 from hei_fastapi_ddd.shared.security.session import SessionPayload
+from hei_fastapi_ddd.types.business import AuthenticationError
 
 
 @pytest.mark.asyncio

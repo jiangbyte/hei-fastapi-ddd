@@ -1,64 +1,45 @@
 """ Author: Charlie
 
 三方登录服务：授权、回调、兑换、绑定/解绑、小程序登录与门户自动开户。
-
-对齐 hei-boot AuthOauthServiceImpl 的流程与契约：
-- state 一次性存储（Redis），回调后用 oauth_code 兑换登录结果，token 不进 URL。
-- 管理端禁止三方自动开户（先密码登录再绑定）；门户可自动开户。
 """
 import base64
 import secrets
+from collections.abc import Mapping
 from typing import Any
 from urllib.parse import urlencode
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from hei_fastapi_ddd.contexts.auth.application.api.oauth_ports import (
+    OauthBindingRepositoryPort,
+    OauthClientPort,
+    OauthExchangeStorePort,
+    OauthStatePayload,
+    OauthStateStorePort,
+)
 from hei_fastapi_ddd.contexts.auth.application.auth_application_service import AuthService
-from hei_fastapi_ddd.contexts.auth.infrastructure.oauth.client import OauthClientFacade
-from hei_fastapi_ddd.contexts.auth.infrastructure.oauth.provider import (
-    WECHAT_FAMILY,
+from hei_fastapi_ddd.contexts.auth.application.oauth.dto import (
+    OauthBindingResult,
+    OauthProviderOptionResult,
+)
+from hei_fastapi_ddd.contexts.auth.domain.oauth.provider import (
+    WECHAT_FAMILY_VALUES,
     OauthProvider,
     OauthUserProfile,
-)
-from hei_fastapi_ddd.contexts.auth.infrastructure.oauth.stores import (
-    OauthExchangeStore,
-    OauthStatePayload,
-    OauthStateStore,
-)
-from hei_fastapi_ddd.contexts.auth.infrastructure.persistence.oauth_repository import (
-    AccountOauthBindingRepository,
-)
-from hei_fastapi_ddd.contexts.auth.interfaces.http.oauth_schemas import (
-    OauthBindingResult,
-    OauthProviderOptionSchema,
 )
 from hei_fastapi_ddd.contexts.iam.application.account.password_helper import (
     validate_and_record_password,
 )
-from hei_fastapi_ddd.contexts.iam.application.api.account_api_adapter import (
-    AccountApiAdapter as AccountRepository,
-)
+from hei_fastapi_ddd.contexts.iam.application.api.account_api import AccountApi
+from hei_fastapi_ddd.contexts.iam.domain.account.password_port import AccountPasswordPort
 from hei_fastapi_ddd.contexts.iam.domain.enums import AccountIdentityType
-from hei_fastapi_ddd.contexts.iam.infrastructure.persistence.account_po import SysAccount
-from hei_fastapi_ddd.contexts.iam.interfaces.http.account_schemas import (
-    AccountCreateRequest,
-    AccountDeptAssignRequest,
-    AccountRoleAssignRequest,
-)
-from hei_fastapi_ddd.contexts.profile.infrastructure.persistence.portal_repository import (
-    ProfileUserPortalRepository,
-)
-from hei_fastapi_ddd.contexts.profile.interfaces.http.portal_schemas import (
-    ProfileUserPortalUpsertPayload,
-)
+from hei_fastapi_ddd.contexts.profile.application.api.profile_upsert_port import ProfileUpsertPort
 from hei_fastapi_ddd.shared.audit import snapshots as audit_snapshots
 from hei_fastapi_ddd.shared.config.enums import AccountStatusEnum, AccountType
 from hei_fastapi_ddd.shared.config.reader import config_reader
-from hei_fastapi_ddd.shared.exceptions.business import BusinessError
 from hei_fastapi_ddd.shared.persistence.transaction import transactional
-from hei_fastapi_ddd.shared.schema.datetime import normalize_orm_datetimes
 from hei_fastapi_ddd.shared.security.password import hash_password_async
-
+from hei_fastapi_ddd.types.business import BusinessError
 
 def _mask_open_id(open_id: str | None) -> str:
     """openid 脱敏：前 4 后 4，中间 ****。"""
@@ -73,14 +54,26 @@ def _mask_open_id(open_id: str | None) -> str:
 class AuthOauthService:
     """三方登录应用服务。"""
 
-    def __init__(self, db: AsyncSession):
+    def __init__(
+        self,
+        db: AsyncSession,
+        *,
+        auth_service: AuthService,
+        oauth_client: OauthClientPort,
+        state_store: OauthStateStorePort,
+        exchange_store: OauthExchangeStorePort,
+        binding_repo: OauthBindingRepositoryPort,
+    ):
         self.db = db
-        self.client = OauthClientFacade()
-        self.state_store = OauthStateStore()
-        self.exchange_store = OauthExchangeStore()
-        self.binding_repo = AccountOauthBindingRepository(db)
-        self.account_repo = AccountRepository(db)
-        self.auth_service = AuthService(db)
+        self.auth_service = auth_service
+        self.oauth_client = oauth_client
+        self.state_store = state_store
+        self.exchange_store = exchange_store
+        self.binding_repo = binding_repo
+        self.account_api: AccountApi = auth_service.account_api
+        self.profile_port: ProfileUpsertPort = auth_service.profile_port
+        self.password_port: AccountPasswordPort = auth_service.password_port
+
 
     async def authorize(
         self,
@@ -94,7 +87,7 @@ class AuthOauthService:
         provider = self._provider(provider_raw)
         if not provider.web_oauth:
             raise BusinessError("请使用小程序登录接口")
-        await self.client.ensure_enabled(account_type, provider)
+        await self.oauth_client.ensure_enabled(account_type, provider)
         normalized_intent = (intent or "LOGIN").strip().upper()
         if normalized_intent not in {"LOGIN", "BIND"}:
             raise BusinessError("不支持的 OAuth intent")
@@ -111,7 +104,7 @@ class AuthOauthService:
                 raise BusinessError("账号类型不匹配")
             payload.account_id = session_payload.account_id
         state = await self.state_store.save(payload)
-        authorize_url = self.client.build_authorize_url(account_type, provider, state)
+        authorize_url = self.oauth_client.build_authorize_url(account_type, provider, state)
         return {"authorize_url": authorize_url, "state": state}
 
     async def handle_callback(
@@ -133,7 +126,7 @@ class AuthOauthService:
         ):
             return self._fail_redirect(frontend, "授权状态不匹配")
         try:
-            profile = await self.client.login_by_code(
+            profile = await self.oauth_client.login_by_code(
                 account_type, provider, code, state
             )
             if payload.intent == "BIND":
@@ -160,7 +153,7 @@ class AuthOauthService:
 
     async def login_wechat_mp(self, account_type: AccountType, code: str | None) -> dict[str, Any]:
         """微信小程序 code2session 登录并签发会话。"""
-        profile = await self.client.login_wechat_mp(account_type, code)
+        profile = await self.oauth_client.login_wechat_mp(account_type, code)
         label = profile.nickname or _mask_open_id(profile.open_id)
         audit_snapshots.subject(label)
         audit_snapshots.after(
@@ -177,19 +170,18 @@ class AuthOauthService:
         results: list[OauthBindingResult] = []
         for binding in bindings:
             try:
-                provider = self._provider(binding.provider)
+                provider = self._provider(binding["provider"])
                 label = provider.label
             except ValueError:
-                label = binding.provider
-            normalize_orm_datetimes(binding)
+                label = binding["provider"]
             results.append(
                 OauthBindingResult(
-                    provider=binding.provider,
+                    provider=binding["provider"],
                     label=label,
-                    open_id_masked=_mask_open_id(binding.open_id),
-                    nickname=binding.nickname,
-                    avatar=binding.avatar,
-                    bound_at=binding.bound_at,
+                    open_id_masked=_mask_open_id(binding["open_id"]),
+                    nickname=binding["nickname"],
+                    avatar=binding["avatar"],
+                    bound_at=binding["bound_at"],
                 )
             )
         return results
@@ -219,7 +211,7 @@ class AuthOauthService:
             (
                 item
                 for item in await self.binding_repo.list_by_account(account_id)
-                if item.provider == provider.value
+                if item["provider"] == provider.value
             ),
             None,
         )
@@ -239,7 +231,7 @@ class AuthOauthService:
             (
                 item
                 for item in await self.binding_repo.list_by_account(account_id)
-                if item.provider == provider.value
+                if item["provider"] == provider.value
             ),
             None,
         )
@@ -249,9 +241,9 @@ class AuthOauthService:
         async with transactional(self.db):
             await self.binding_repo.unbind(account_id, provider.value)
 
-    def list_provider_options(self, account_type: AccountType) -> list[OauthProviderOptionSchema]:
+    def list_provider_options(self, account_type: AccountType) -> list[OauthProviderOptionResult]:
         """列出 auth-options 下发的三方登录入口（管理端隐藏小程序）。"""
-        options: list[OauthProviderOptionSchema] = []
+        options: list[OauthProviderOptionResult] = []
         for provider in OauthProvider:
             if account_type == AccountType.ADMIN and provider == OauthProvider.WECHAT_MP:
                 continue
@@ -259,7 +251,7 @@ class AuthOauthService:
                 f"AUTH_OAUTH_{account_type.value}_{provider.value}_ENABLED", False
             )
             options.append(
-                OauthProviderOptionSchema(
+                OauthProviderOptionResult(
                     provider=provider.value,
                     label=provider.label,
                     enabled=enabled,
@@ -276,13 +268,13 @@ class AuthOauthService:
         """按绑定关系登录，门户未绑定时自动开户。"""
         binding = await self._resolve_binding(profile)
         if binding is not None:
-            account = await self.account_repo.get_by_id(binding.account_id)
+            account = await self.account_api.get_by_id(binding["account_id"])
             if account is None:
                 raise BusinessError("绑定账号不存在")
-            if str(account.account_type) != account_type.value:
+            if str(account["account_type"]) != account_type.value:
                 raise BusinessError("账号类型不匹配")
             await self.binding_repo.upsert_binding(
-                account.id,
+                account["id"],
                 profile.provider,
                 profile.open_id,
                 profile.union_id,
@@ -291,7 +283,7 @@ class AuthOauthService:
                 profile.raw_profile_json,
             )
             label = profile.nickname or await self._account_identifier(
-                account.id, AccountIdentityType.ACCOUNT
+                account["id"], AccountIdentityType.ACCOUNT
             )
             return await self._issue(account, account_type, label)
 
@@ -305,35 +297,36 @@ class AuthOauthService:
                 secrets.token_bytes(32)
             ).decode().rstrip("=")
             nickname = profile.nickname or f"user-{account_name[-8:]}"
-            account = await self.account_repo.create(
-                AccountCreateRequest(
-                    account=account_name,
-                    password=raw_password,
-                    account_type=AccountType.PORTAL,
-                    account_status=AccountStatusEnum.ENABLED,
-                    nickname=nickname,
-                ),
+            account = await self.account_api.create_account(
+                {
+                    "account": account_name,
+                    "password": raw_password,
+                    "account_type": AccountType.PORTAL,
+                    "account_status": AccountStatusEnum.ENABLED,
+                    "nickname": nickname,
+                },
                 password_hash=await hash_password_async(raw_password),
             )
             await validate_and_record_password(
                 self.db,
-                account.id,
+                account["id"],
                 raw_password,
-                changed_by=account.id,
+                changed_by=account["id"],
                 change_reason="oauth_register",
-                account=account,
+                account_repo=self.account_api,
+                password_port=self.password_port,
                 account_name=account_name,
             )
-            await ProfileUserPortalRepository(self.db).upsert(
-                ProfileUserPortalUpsertPayload(
-                    account_id=account.id,
-                    nickname=nickname,
-                    avatar=profile.avatar,
-                )
+            await self.profile_port.upsert_portal_profile(
+                {
+                    "account_id": account["id"],
+                    "nickname": nickname,
+                    "avatar": profile.avatar,
+                }
             )
-            await self._assign_register_defaults(account.id)
+            await self.auth_service._assign_register_defaults(account["id"], AccountType.PORTAL)
             await self.binding_repo.upsert_binding(
-                account.id,
+                account["id"],
                 profile.provider,
                 profile.open_id,
                 profile.union_id,
@@ -346,12 +339,12 @@ class AuthOauthService:
     async def _bind_profile(self, account_id: str, profile: OauthUserProfile) -> None:
         """将三方资料绑定到指定账号，校验冲突。"""
         existing = await self._resolve_binding(profile)
-        if existing is not None and existing.account_id != account_id:
+        if existing is not None and existing["account_id"] != account_id:
             raise BusinessError("该三方账号已绑定其他用户")
         same_provider = [
             item
             for item in await self.binding_repo.list_by_account(account_id)
-            if item.provider == profile.provider
+            if item["provider"] == profile.provider
         ]
         if same_provider and same_provider[0].open_id != profile.open_id:
             raise BusinessError(f"已绑定其他 {profile.provider} 账号，请先解绑")
@@ -367,7 +360,7 @@ class AuthOauthService:
 
     async def _resolve_binding(self, profile: OauthUserProfile):
         """按 unionid（微信族）或 provider+openid 解析绑定。"""
-        if profile.provider in WECHAT_FAMILY and profile.union_id:
+        if profile.provider in WECHAT_FAMILY_VALUES and profile.union_id:
             by_union = await self.binding_repo.find_by_wechat_union_id(profile.union_id)
             if by_union is not None:
                 return by_union
@@ -379,17 +372,17 @@ class AuthOauthService:
         """解绑前确保至少保留一种登录方式。"""
         bindings = await self.binding_repo.list_by_account(account_id)
         target = next(
-            (item for item in bindings if item.provider == provider), None
+            (item for item in bindings if item["provider"] == provider), None
         )
         if target is None:
             return
-        has_account = await self.account_repo.has_identity(
+        has_account = await self.account_api.has_identity(
             account_id, AccountIdentityType.ACCOUNT
         )
-        has_email = await self.account_repo.has_identity(
+        has_email = await self.account_api.has_identity(
             account_id, AccountIdentityType.EMAIL
         )
-        has_phone = await self.account_repo.has_identity(
+        has_phone = await self.account_api.has_identity(
             account_id, AccountIdentityType.PHONE
         )
         other_login_ways = (
@@ -418,7 +411,7 @@ class AuthOauthService:
         base = (prefix + suffix).lower()
         candidate = base
         index = 0
-        while await self.account_repo.get_account_by_identifier(
+        while await self.account_api.get_account_by_identifier(
             candidate, [AccountIdentityType.ACCOUNT]
         ) is not None:
             index += 1
@@ -429,38 +422,18 @@ class AuthOauthService:
         self, account_id: str, identity_type: AccountIdentityType
     ) -> str:
         """返回账号主标识。"""
-        identities = await self.account_repo.list_identities_by_account_ids([account_id])
+        identities = await self.account_api.list_identities_by_account_ids([account_id])
         for item in identities:
-            if item.identity_type == identity_type.value and item.is_primary:
-                return item.identifier or ""
+            if item.get("identity_type") == identity_type.value and item.get("is_primary"):
+                return item.get("identifier") or ""
         for item in identities:
-            if item.identity_type == identity_type.value:
-                return item.identifier or ""
+            if item.get("identity_type") == identity_type.value:
+                return item.get("identifier") or ""
         return ""
-
-    async def _assign_register_defaults(self, account_id: str) -> None:
-        """为自动开户账户分配策略配置的默认角色与部门。"""
-        from hei_fastapi_ddd.contexts.auth.domain.policy import get_register_policy
-
-        policy = get_register_policy(AccountType.PORTAL)
-        if policy.default_role_id:
-            await self.account_repo.assign_account_to_role(
-                AccountRoleAssignRequest(
-                    account_id=account_id, role_id=policy.default_role_id
-                )
-            )
-        if policy.default_dept_id:
-            await self.account_repo.assign_account_to_dept(
-                AccountDeptAssignRequest(
-                    account_id=account_id,
-                    dept_id=policy.default_dept_id,
-                    is_primary=True,
-                )
-            )
 
     async def _issue(
         self,
-        account: SysAccount,
+        account: Mapping[str, Any],
         account_type: AccountType,
         login_label: str | None,
     ) -> dict[str, Any]:

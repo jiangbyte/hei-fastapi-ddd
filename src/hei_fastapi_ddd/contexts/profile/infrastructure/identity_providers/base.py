@@ -1,15 +1,17 @@
 """Author: Charlie
 
-第三方实人认证 Provider 协议。
+第三方实人认证 Provider 协议（基础设施实现侧）。
 """
 
-from typing import Protocol
+from __future__ import annotations
 
-from hei_fastapi_ddd.contexts.profile.infrastructure.persistence.identity_po import RealNameCase
-from hei_fastapi_ddd.contexts.profile.interfaces.http.identity_schemas import (
-    RealNameCaseCallbackRequest,
+from collections.abc import Mapping
+from typing import Any, Protocol
+
+from hei_fastapi_ddd.contexts.profile.application.identity.dto import (
+    RealNameCaseCallbackCommand,
     RealNameCaseInitResponse,
-    RealNameCaseInitThirdPartyRequest,
+    RealNameCaseInitThirdPartyCommand,
 )
 
 
@@ -20,12 +22,12 @@ class IdentityVerifyProvider(Protocol):
 
     async def init_verify(
         self,
-        case: RealNameCase,
-        param: RealNameCaseInitThirdPartyRequest,
+        case: Mapping[str, Any],
+        param: RealNameCaseInitThirdPartyCommand,
     ) -> RealNameCaseInitResponse: ...
 
     async def handle_callback(
         self,
-        case: RealNameCase,
-        param: RealNameCaseCallbackRequest,
+        case: Mapping[str, Any],
+        param: RealNameCaseCallbackCommand,
     ) -> None: ...

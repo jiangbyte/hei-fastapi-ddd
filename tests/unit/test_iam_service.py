@@ -1,12 +1,12 @@
 """ Author: Charlie """
 
+from hei_fastapi_ddd.contexts.iam.api.account_schemas import AccountCreateRequest
 from hei_fastapi_ddd.contexts.iam.application.account.account_application_service import (
     AccountService,
 )
 from hei_fastapi_ddd.contexts.iam.infrastructure.persistence.account_repository import (
     AccountRepository,
 )
-from hei_fastapi_ddd.contexts.iam.interfaces.http.account_schemas import AccountCreateRequest
 from hei_fastapi_ddd.contexts.profile.application.admin.admin_application_service import (
     ProfileUserAdminService,
 )

@@ -2,6 +2,7 @@
 
 import uuid
 
+from hei_fastapi_ddd.contexts.iam.api.client_schemas import ClientModuleSelectorQuery
 from hei_fastapi_ddd.contexts.iam.application.client.client_application_service import (
     ClientModuleService,
     ClientResourceService,
@@ -15,7 +16,6 @@ from hei_fastapi_ddd.contexts.iam.infrastructure.persistence.relation_repository
     IamRelationRepository,
 )
 from hei_fastapi_ddd.contexts.iam.infrastructure.persistence.role_po import SysRole
-from hei_fastapi_ddd.contexts.iam.interfaces.http.client_schemas import ClientModuleSelectorQuery
 from hei_fastapi_ddd.shared.config.enums import AccountType, StatusEnum
 
 
@@ -132,7 +132,7 @@ async def test_client_resource_tree_filters_by_account_type(db_session):
     )
     await db_session.commit()
 
-    from hei_fastapi_ddd.contexts.iam.interfaces.http.client_schemas import ClientResourceTreeQuery
+    from hei_fastapi_ddd.contexts.iam.api.client_schemas import ClientResourceTreeQuery
 
     tree = await ClientResourceService(db_session).list_tree(
         None,

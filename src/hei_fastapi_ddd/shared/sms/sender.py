@@ -10,7 +10,7 @@ from typing import Any
 from hei_fastapi_ddd.shared.cloud.aliyun import send_aliyun_sms
 from hei_fastapi_ddd.shared.cloud.tencent import send_tencent_sms
 from hei_fastapi_ddd.shared.config.reader import config_reader
-from hei_fastapi_ddd.shared.exceptions.business import BusinessError
+from hei_fastapi_ddd.types.business import BusinessError
 
 logger = logging.getLogger(__name__)
 

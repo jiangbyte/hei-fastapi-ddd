@@ -23,7 +23,6 @@ from hei_fastapi_ddd.shared.audit.path_catalog import resolve_audit_target
 from hei_fastapi_ddd.shared.audit.queue import OperationAuditEvent, operation_audit_queue
 from hei_fastapi_ddd.shared.audit.skip_catalog import should_skip_audit
 from hei_fastapi_ddd.shared.config.enums import AccountType, account_type_url_segment
-from hei_fastapi_ddd.shared.exceptions.business import AuthenticationError
 from hei_fastapi_ddd.shared.network.client_ip import get_client_ip
 from hei_fastapi_ddd.shared.observability.context import (
     account_id_ctx,
@@ -39,6 +38,7 @@ from hei_fastapi_ddd.shared.security.session_auth import (
 )
 from hei_fastapi_ddd.shared.security.session_token import extract_session_token
 from hei_fastapi_ddd.shared.web.errors import asgi_error_response
+from hei_fastapi_ddd.types.business import AuthenticationError
 
 logger = logging.getLogger(__name__)
 

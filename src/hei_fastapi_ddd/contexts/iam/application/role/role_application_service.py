@@ -1,114 +1,115 @@
-""" Author: Charlie
+"""Author: Charlie
 
-角色应用服务：角色 CRUD、内置角色保护、授权与数据范围可见性校验。
+角色应用服务：依赖 domain 仓储端口，不依赖 infrastructure / api。
 """
+
+from __future__ import annotations
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from hei_fastapi_ddd.contexts.iam.application.account.query_service import AccountQueryService
 from hei_fastapi_ddd.contexts.iam.application.client.client_application_service import (
     ClientResourceService,
 )
 from hei_fastapi_ddd.contexts.iam.application.resource.resource_application_service import (
     ResourceService,
 )
-from hei_fastapi_ddd.contexts.iam.application.support import audit as iam_audit
-from hei_fastapi_ddd.contexts.iam.domain.enums import GrantSubjectType
-from hei_fastapi_ddd.contexts.iam.domain.role.constants import SUPER_ADMIN_ROLE_CODE
-from hei_fastapi_ddd.contexts.iam.infrastructure.persistence.account_po import SysAccount
-from hei_fastapi_ddd.contexts.iam.infrastructure.persistence.account_repository import (
-    AccountRepository,
-)
-from hei_fastapi_ddd.contexts.iam.infrastructure.persistence.relation_po import SysIamRelation
-from hei_fastapi_ddd.contexts.iam.infrastructure.persistence.relation_repository import (
-    IamRelationRepository,
-)
-from hei_fastapi_ddd.contexts.iam.infrastructure.persistence.role_po import SysRole
-from hei_fastapi_ddd.contexts.iam.infrastructure.persistence.role_repository import RoleRepository
-from hei_fastapi_ddd.contexts.iam.interfaces.http.role_schemas import (
-    RoleAdminPageQuery,
-    RoleCreateRequest,
-    RoleGrantClientResourceRequest,
-    RoleGrantResourceRequest,
-    RoleGrantUserRequest,
+from hei_fastapi_ddd.contexts.iam.application.role.dto import (
+    RoleCreateCommand,
+    RoleGrantClientResourceCommand,
+    RoleGrantResourceCommand,
+    RoleGrantUserCommand,
     RoleOwnClientResourceQuery,
-    RoleOwnClientResourceResponse,
     RoleOwnResourceQuery,
-    RoleOwnResourceResponse,
-    RoleOwnUserResponse,
-    RoleResourceGrantInfo,
-    RoleUpdateRequest,
-    SysRoleSchema,
+    RolePageQuery,
+    RoleUpdateCommand,
 )
+from hei_fastapi_ddd.contexts.iam.application.support.audit_port import IamAuditPort
+from hei_fastapi_ddd.contexts.iam.domain.account.repository import AccountRepository
+from hei_fastapi_ddd.contexts.iam.domain.enums import GrantSubjectType
+from hei_fastapi_ddd.contexts.iam.domain.relation.repository import IamRelationRepositoryPort
+from hei_fastapi_ddd.contexts.iam.domain.role.constants import SUPER_ADMIN_ROLE_CODE
+from hei_fastapi_ddd.contexts.iam.domain.role.repository import RoleRepository
+from hei_fastapi_ddd.contexts.profile.application.api.profile_read_port import ProfileReadPort
 from hei_fastapi_ddd.contexts.profile.application.utils.profile import get_profiles_batch
 from hei_fastapi_ddd.shared.audit import snapshots as audit_snapshots
 from hei_fastapi_ddd.shared.config.enums import AccountType
-from hei_fastapi_ddd.shared.exceptions.business import (
+from hei_fastapi_ddd.shared.messaging import emit
+from hei_fastapi_ddd.shared.persistence.batch import chunked
+from hei_fastapi_ddd.shared.persistence.transaction import transactional
+from hei_fastapi_ddd.shared.schema.base import IdQuery, IdsRequest
+from hei_fastapi_ddd.shared.security.data_scope import IAM_ACCOUNT_PAGE, IAM_DEPT_PAGE, IAM_ROLE_PAGE
+from hei_fastapi_ddd.shared.security.session import SessionPayload
+from hei_fastapi_ddd.shared.web.pagination import PageData, build_page
+from hei_fastapi_ddd.types.business import (
     AuthorizationError,
     BusinessError,
     NotFoundError,
 )
-from hei_fastapi_ddd.shared.messaging import emit
-from hei_fastapi_ddd.shared.persistence.batch import chunked
-from hei_fastapi_ddd.shared.persistence.transaction import transactional
-from hei_fastapi_ddd.shared.schema.base import IdQuery, IdsRequest, to_schema, to_schema_list
-from hei_fastapi_ddd.shared.security.data_scope import (
-    IAM_ACCOUNT_PAGE,
-    IAM_DEPT_PAGE,
-    IAM_ROLE_PAGE,
-    build_data_scope_filter,
-    resolve_data_scope_dept_ids,
-)
-from hei_fastapi_ddd.shared.security.session import SessionPayload
-from hei_fastapi_ddd.shared.web.pagination import PageData, build_page
 
 
 class RoleService:
     """角色应用服务。"""
 
-    def __init__(self, db: AsyncSession):
+    def __init__(
+        self,
+        db: AsyncSession,
+        audit: IamAuditPort,
+        *,
+        repo: RoleRepository,
+        relation_repo: IamRelationRepositoryPort,
+        resource_service: ResourceService,
+        client_resource_service: ClientResourceService,
+        account_repo: AccountRepository,
+        profile_read_port: ProfileReadPort,
+    ):
         self.db = db
-        self.repo = RoleRepository(db)
+        self.audit = audit
+        self.repo = repo
+        self.relation_repo = relation_repo
+        self.resource_service = resource_service
+        self.client_resource_service = client_resource_service
+        self.account_repo = account_repo
+        self._profile_read_port = profile_read_port
 
     async def create(
         self,
-        payload: RoleCreateRequest,
+        command: RoleCreateCommand,
         session: SessionPayload | None = None,
     ) -> None:
-        """创建角色，传入 session 时校验所属部门可见性；编码需唯一（对齐 hei-boot）。"""
-        if await self.repo.get_by_code(payload.code) is not None:
+        """创建角色，传入 session 时校验所属部门可见性。"""
+        if await self.repo.get_by_code(command.code) is not None:
             raise BusinessError("Role code already exists")
-        if session is not None and payload.owner_dept_id:
-            await self._ensure_depts_visible(session, "iam:role:create", [payload.owner_dept_id])
+        if session is not None and command.owner_dept_id:
+            await self._ensure_depts_visible(session, "iam:role:create", [command.owner_dept_id])
         async with transactional(self.db):
-            await self.repo.create(payload)
-        entity = await self.repo.get_by_code(payload.code)
+            await self.repo.create(command.model_dump())
+        entity = await self.repo.get_by_code(command.code)
         if entity is not None:
             audit_snapshots.created_entity(entity)
 
     async def update(
         self,
-        payload: RoleUpdateRequest,
+        command: RoleUpdateCommand,
         session: SessionPayload | None = None,
     ) -> None:
         """更新角色，传入 session 时校验可见性并保护内置角色。"""
         if session is not None:
-            await self._ensure_roles_visible(session, "iam:role:update", [payload.id])
-            if payload.owner_dept_id:
+            await self._ensure_roles_visible(session, "iam:role:update", [command.id])
+            if command.owner_dept_id:
                 await self._ensure_depts_visible(
                     session,
                     "iam:role:update",
-                    [payload.owner_dept_id],
+                    [command.owner_dept_id],
                 )
-        existing = await self.repo.get_required(payload.id)
-        self._ensure_protected_role_mutable(existing, payload)
-        duplicate = await self.repo.get_by_code(payload.code)
-        if duplicate is not None and duplicate.id != payload.id:
+        existing = await self.repo.get_required(command.id)
+        self._ensure_protected_role_mutable(existing, command)
+        duplicate = await self.repo.get_by_code(command.code)
+        if duplicate is not None and duplicate["id"] != command.id:
             raise BusinessError("Role code already exists")
         audit_snapshots.before_entity(existing)
         async with transactional(self.db):
-            await self.repo.update(payload)
-        updated = await self.repo.get_required(payload.id)
+            await self.repo.update(command.model_dump())
+        updated = await self.repo.get_required(command.id)
         audit_snapshots.after_entity(updated)
 
     async def delete(self, payload: IdsRequest, session: SessionPayload | None = None) -> None:
@@ -121,123 +122,127 @@ class RoleService:
         async with transactional(self.db):
             await self.repo.delete_many(payload.ids)
 
-    async def detail(self, query: IdQuery, session: SessionPayload | None = None) -> SysRoleSchema:
-        """查询角色详情并回显部门名称与创建人昵称。"""
+    async def detail(
+        self,
+        query: IdQuery,
+        session: SessionPayload | None = None,
+    ) -> dict:
+        """查询角色详情行（含部门名称与创建人昵称）。"""
         if session is not None:
             await self._ensure_roles_visible(session, "iam:role:detail", [query.id])
-        schema = to_schema(SysRoleSchema, await self.repo.get_required(query.id))
-        await self._resolve_names([schema])
-        return schema
+        row = await self.repo.get_required(query.id)
+        return (await self._enrich_rows([row]))[0]
 
     async def page_admin(
         self,
-        query: RoleAdminPageQuery,
+        query: RolePageQuery,
         session: SessionPayload | None = None,
-    ) -> PageData[SysRoleSchema]:
+    ) -> PageData[dict]:
         """分页查询角色，叠加数据范围过滤。"""
-        data_scope_filter = (
-            await self._role_scope_filter(session, "iam:role:page") if session is not None else None
+        items, total = await self.repo.page_admin(
+            query.model_dump(exclude={"current", "size"}),
+            offset=query.offset,
+            limit=query.size,
+            session=session,
         )
-        items, total = await self.repo.page_admin(query, data_scope_filter)
-        schemas = to_schema_list(SysRoleSchema, items)
-        await self._resolve_names(schemas)
-        return build_page(query, total, schemas)
+        enriched = await self._enrich_rows(items)
+        return build_page(query, total, enriched)  # type: ignore[arg-type]
 
     async def own_resource(
         self,
         query: RoleOwnResourceQuery,
         session: SessionPayload | None = None,
-    ) -> RoleOwnResourceResponse:
-        """返回角色拥有的资源授权。"""
+    ) -> dict:
+        """返回角色拥有的资源授权视图。"""
         if session is not None:
             await self._ensure_roles_visible(session, "iam:role:ownresource", [query.id])
-        return RoleOwnResourceResponse(
-            id=query.id,
-            modules=await ResourceService(self.db).list_grant_modules(
+        account_type = query.account_type.value if query.account_type else None
+        return {
+            "id": query.id,
+            "modules": await self.resource_service.list_grant_modules(
                 module_client=query.account_type,
             ),
-            grant_info_list=await self.repo.list_resource_grants(
+            "grant_info_list": await self.repo.list_resource_grants(
                 query.id,
-                account_type=query.account_type.value if query.account_type else None,
+                account_type=account_type,
             ),
-        )
+        }
 
     async def grant_resource(
         self,
-        payload: RoleGrantResourceRequest,
+        command: RoleGrantResourceCommand,
         session: SessionPayload | None = None,
     ) -> None:
         """全量替换角色资源授权，并刷新成员账户会话。"""
         if session is not None:
-            await self._ensure_roles_visible(session, "iam:role:grantresource", [payload.id])
-        role = await self.repo.get_required(payload.id)
-        audit_snapshots.subject(role.name)
-        audit_snapshots.resource_id(role.id)
-        account_type = payload.account_type.value
-        old_grants = await self.repo.list_resource_grants(payload.id, account_type=account_type)
-        audit_snapshots.before(await iam_audit.grant_resource_field(self.db, "资源", old_grants))
+            await self._ensure_roles_visible(session, "iam:role:grantresource", [command.id])
+        role = await self.repo.get_required(command.id)
+        audit_snapshots.subject(role["name"])
+        audit_snapshots.resource_id(role["id"])
+        account_type = command.account_type.value
+        old_grants = await self.repo.list_resource_grants(command.id, account_type=account_type)
+        audit_snapshots.before(await self.audit.grant_resource_field("资源", old_grants))
         async with transactional(self.db):
-            old_account_ids = await self.repo.list_account_ids_by_role(payload.id)
-            await self.repo.replace_resource_grants(payload)
-        new_grants = await self.repo.list_resource_grants(payload.id, account_type=account_type)
-        audit_snapshots.after(await iam_audit.grant_resource_field(self.db, "资源", new_grants))
+            old_account_ids = await self.repo.list_account_ids_by_role(command.id)
+            await self.repo.replace_resource_grants(command.model_dump())
+        new_grants = await self.repo.list_resource_grants(command.id, account_type=account_type)
+        audit_snapshots.after(await self.audit.grant_resource_field("资源", new_grants))
         await self._refresh_accounts(old_account_ids)
 
     async def own_client_resource(
         self,
         query: RoleOwnClientResourceQuery,
         session: SessionPayload | None = None,
-    ) -> RoleOwnClientResourceResponse:
-        """返回角色拥有的客户端资源授权。"""
+    ) -> dict:
+        """返回角色拥有的客户端资源授权视图。"""
         if session is not None:
             await self._ensure_roles_visible(session, "iam:role:ownclientresource", [query.id])
-        grants = await IamRelationRepository(self.db).list_subject_client_resource_grants(
+        grants = await self.relation_repo.list_subject_client_resource_grants(
             GrantSubjectType.ROLE,
             query.id,
             account_type=query.account_type,
         )
-        return RoleOwnClientResourceResponse(
-            id=query.id,
-            modules=await ClientResourceService(self.db).list_grant_modules(query.account_type),
-            grant_info_list=[RoleResourceGrantInfo.model_validate(grant) for grant in grants],
-        )
+        return {
+            "id": query.id,
+            "modules": await self.client_resource_service.list_grant_modules(query.account_type),
+            "grant_info_list": grants,
+        }
 
     async def grant_client_resource(
         self,
-        payload: RoleGrantClientResourceRequest,
+        command: RoleGrantClientResourceCommand,
         session: SessionPayload | None = None,
     ) -> None:
         """全量替换角色客户端资源授权，并刷新成员账户会话。"""
         if session is not None:
-            await self._ensure_roles_visible(session, "iam:role:grantclientresource", [payload.id])
-        role = await self.repo.get_required(payload.id)
-        audit_snapshots.subject(role.name)
-        audit_snapshots.resource_id(role.id)
-        account_type = payload.account_type.value
-        relation_repo = IamRelationRepository(self.db)
-        old_grants = await relation_repo.list_subject_client_resource_grants(
+            await self._ensure_roles_visible(session, "iam:role:grantclientresource", [command.id])
+        role = await self.repo.get_required(command.id)
+        audit_snapshots.subject(role["name"])
+        audit_snapshots.resource_id(role["id"])
+        account_type = command.account_type.value
+        old_grants = await self.relation_repo.list_subject_client_resource_grants(
             GrantSubjectType.ROLE,
-            payload.id,
+            command.id,
             account_type=account_type,
         )
         audit_snapshots.before(
-            await iam_audit.grant_client_resource_field(self.db, "客户端资源", old_grants)
+            await self.audit.grant_client_resource_field("客户端资源", old_grants)
         )
         async with transactional(self.db):
-            old_account_ids = await self.repo.list_account_ids_by_role(payload.id)
-            await relation_repo.replace_subject_client_resource_grant_infos(
+            old_account_ids = await self.repo.list_account_ids_by_role(command.id)
+            await self.relation_repo.replace_subject_client_resource_grant_infos(
                 GrantSubjectType.ROLE,
-                payload.id,
-                payload.grant_info_list,
-                account_type=payload.account_type,
+                command.id,
+                command.grant_info_list,
+                account_type=command.account_type,
             )
-        new_grants = await relation_repo.list_subject_client_resource_grants(
+        new_grants = await self.relation_repo.list_subject_client_resource_grants(
             GrantSubjectType.ROLE,
-            payload.id,
+            command.id,
             account_type=account_type,
         )
         audit_snapshots.after(
-            await iam_audit.grant_client_resource_field(self.db, "客户端资源", new_grants)
+            await self.audit.grant_client_resource_field("客户端资源", new_grants)
         )
         await self._refresh_accounts(old_account_ids)
 
@@ -245,91 +250,96 @@ class RoleService:
         self,
         query: IdQuery,
         session: SessionPayload | None = None,
-    ) -> RoleOwnUserResponse:
+    ) -> dict:
         """返回拥有该角色的用户（含全部可见账户与已选成员）。"""
-        account_filter = (
-            await self._account_scope_filter(session, "iam:role:ownuser")
-            if session is not None
-            else None
-        )
         if session is not None:
             await self._ensure_roles_visible(session, "iam:role:ownuser", [query.id])
-        users = await self.repo.list_accounts(account_filter)
-        role_users = await self.repo.list_role_accounts(query.id, account_filter)
-        return RoleOwnUserResponse(
-            id=query.id,
-            users=await AccountQueryService(self.db).build_account_picker_schemas(users),
-            account_ids=[account.id for account in role_users],
-        )
+        users = await self.repo.list_accounts(session=session)
+        role_users = await self.repo.list_role_accounts(query.id, session=session)
+        return {
+            "id": query.id,
+            "users": users,
+            "account_ids": [account["id"] for account in role_users],
+        }
 
     async def grant_user(
         self,
-        payload: RoleGrantUserRequest,
+        command: RoleGrantUserCommand,
         session: SessionPayload | None = None,
     ) -> None:
         """全量替换角色成员，并刷新受影响账户会话。"""
         if session is not None:
-            await self._ensure_roles_visible(session, "iam:role:grantuser", [payload.id])
-            await self._ensure_accounts_visible(session, "iam:role:grantuser", payload.account_ids)
-        role = await self.repo.get_required(payload.id)
-        audit_snapshots.subject(role.name)
-        audit_snapshots.resource_id(role.id)
-        old_account_ids = await self.repo.list_account_ids_by_role(payload.id)
-        audit_snapshots.before(await iam_audit.account_ids_field(self.db, old_account_ids))
+            await self._ensure_roles_visible(session, "iam:role:grantuser", [command.id])
+            await self._ensure_accounts_visible(session, "iam:role:grantuser", command.account_ids)
+        role = await self.repo.get_required(command.id)
+        audit_snapshots.subject(role["name"])
+        audit_snapshots.resource_id(role["id"])
+        old_account_ids = await self.repo.list_account_ids_by_role(command.id)
+        audit_snapshots.before(await self.audit.account_ids_field(old_account_ids))
         async with transactional(self.db):
-            await self.repo.replace_role_accounts(payload)
-        audit_snapshots.after(await iam_audit.account_ids_field(self.db, payload.account_ids))
-        await self._refresh_accounts(sorted(set(old_account_ids + payload.account_ids)))
+            await self.repo.replace_role_accounts(command.model_dump())
+        audit_snapshots.after(await self.audit.account_ids_field(command.account_ids))
+        await self._refresh_accounts(sorted(set(old_account_ids + command.account_ids)))
 
-    async def _resolve_names(self, dtos: list[SysRoleSchema]) -> None:
+    async def _enrich_rows(self, rows: list[dict]) -> list[dict]:
         """批量解析部门名称和创建人/更新人昵称。"""
-        dept_ids = {d.owner_dept_id for d in dtos if d.owner_dept_id}
-        creator_ids = set()
-        for d in dtos:
-            if d.created_by:
-                creator_ids.add(d.created_by)
-            if d.updated_by:
-                creator_ids.add(d.updated_by)
-        if dept_ids:
-            dept_map = await self.repo.resolve_dept_names(list(dept_ids))
-            for d in dtos:
-                if d.owner_dept_id and d.owner_dept_id in dept_map:
-                    d.owner_dept_name = dept_map[d.owner_dept_id]
-        if creator_ids:
-            profiles = await get_profiles_batch(self.db, AccountType.ADMIN, list(creator_ids))
-            for d in dtos:
-                if d.created_by and d.created_by in profiles:
-                    d.created_name = getattr(profiles[d.created_by], "nickname", None)
-                if d.updated_by and d.updated_by in profiles:
-                    d.updated_name = getattr(profiles[d.updated_by], "nickname", None)
+        dept_ids = {str(r["owner_dept_id"]) for r in rows if r.get("owner_dept_id")}
+        creator_ids: set[str] = set()
+        for row in rows:
+            if row.get("created_by"):
+                creator_ids.add(str(row["created_by"]))
+            if row.get("updated_by"):
+                creator_ids.add(str(row["updated_by"]))
+        dept_map = await self.repo.resolve_dept_names(list(dept_ids)) if dept_ids else {}
+        profile_map = (
+            await get_profiles_batch(
+                self._profile_read_port, AccountType.ADMIN, list(creator_ids)
+            )
+            if creator_ids
+            else {}
+        )
+        enriched: list[dict] = []
+        for row in rows:
+            item = dict(row)
+            oid = item.get("owner_dept_id")
+            if oid and str(oid) in dept_map:
+                item["owner_dept_name"] = dept_map[str(oid)]
+            cb = item.get("created_by")
+            if cb and cb in profile_map:
+                item["created_name"] = profile_map[cb].get("nickname")
+            ub = item.get("updated_by")
+            if ub and ub in profile_map:
+                item["updated_name"] = profile_map[ub].get("nickname")
+            enriched.append(item)
+        return enriched
 
     async def _refresh_accounts(self, account_ids: list[str]) -> None:
         """刷新指定账户的在线会话缓存。"""
         await emit("on_authorization_changed", account_ids=sorted(set(account_ids)))
 
-    def _is_protected_role(self, role: SysRole) -> bool:
+    def _is_protected_role(self, role: dict) -> bool:
         """判断角色是否为内置或超级管理员角色。"""
-        return bool(role.is_builtin) or role.code == SUPER_ADMIN_ROLE_CODE
+        return bool(role.get("is_builtin")) or role.get("code") == SUPER_ADMIN_ROLE_CODE
 
     def _ensure_protected_role_mutable(
         self,
-        existing: SysRole,
-        payload: RoleUpdateRequest,
+        existing: dict,
+        command: RoleUpdateCommand,
     ) -> None:
         """阻止修改内置/超级管理员角色的编码与内置标记。"""
         if not self._is_protected_role(existing):
             return
-        if payload.code != existing.code:
+        if command.code != existing["code"]:
             raise BusinessError("Cannot change code of builtin or SUPER_ADMIN role")
-        if bool(payload.is_builtin) != bool(existing.is_builtin):
+        if bool(command.is_builtin) != bool(existing.get("is_builtin")):
             raise BusinessError("Cannot change is_builtin of builtin or SUPER_ADMIN role")
 
     async def _ensure_roles_deletable(self, role_ids: list[str]) -> None:
-        """阻止删除内置或超级管理员角色（分批 IN 查询，避免逐条查询）。"""
+        """阻止删除内置或超级管理员角色。"""
         unique_ids = list(dict.fromkeys(role_ids))
         if not unique_ids:
             return
-        roles: list[SysRole] = []
+        roles: list[dict] = []
         for batch in chunked(unique_ids):
             roles.extend(await self.repo.list_by_ids(batch))
         if len(roles) != len(unique_ids):
@@ -338,39 +348,22 @@ class RoleService:
             if self._is_protected_role(role):
                 raise BusinessError("Cannot delete builtin or SUPER_ADMIN role")
 
-    async def _role_scope_filter(self, session: SessionPayload, permission_key: str):
-        """构造角色数据范围过滤条件。"""
-        return await build_data_scope_filter(
-            self.db,
-            session,
-            permission_key,
-            owner_column=SysRole.created_by,
-            dept_column=SysRole.owner_dept_id,
-        )
-
-    async def _account_scope_filter(self, session: SessionPayload, permission_key: str):
-        """构造账户数据范围过滤条件。"""
-        return await build_data_scope_filter(
-            self.db,
-            session,
-            permission_key,
-            owner_column=SysAccount.id,
-            dept_column=SysIamRelation.target_id,
-        )
-
     async def _ensure_roles_visible(
         self,
         session: SessionPayload,
         permission_key: str,
         role_ids: list[str],
     ) -> None:
-        """校验目标角色均在当前数据范围内，否则抛授权错误。"""
-        _ = permission_key
+        """校验目标角色均在当前数据范围内。"""
         unique_ids = list(dict.fromkeys(role_ids))
         if not unique_ids:
             return
-        data_scope_filter = await self._role_scope_filter(session, IAM_ROLE_PAGE)
-        if await self.repo.count_roles_in_scope(unique_ids, data_scope_filter) != len(unique_ids):
+        count = await self.repo.count_roles_in_scope(
+            unique_ids,
+            session=session,
+            permission=permission_key or IAM_ROLE_PAGE,
+        )
+        if count != len(unique_ids):
             raise AuthorizationError("Role is outside current data scope")
 
     async def _ensure_accounts_visible(
@@ -379,15 +372,14 @@ class RoleService:
         permission_key: str,
         account_ids: list[str],
     ) -> None:
-        """校验目标账户均在当前数据范围内，否则抛授权错误。"""
-        _ = permission_key
+        """校验目标账户均在当前数据范围内。"""
         unique_ids = list(dict.fromkeys(account_ids))
         if not unique_ids:
             return
-        data_scope_filter = await self._account_scope_filter(session, IAM_ACCOUNT_PAGE)
-        count = await AccountRepository(self.db).count_accounts_in_scope(
+        count = await self.account_repo.count_accounts_in_scope(
             unique_ids,
-            data_scope_filter,
+            session=session,
+            permission=permission_key or IAM_ACCOUNT_PAGE,
         )
         if count != len(unique_ids):
             raise AuthorizationError("Account is outside current data scope")
@@ -398,8 +390,9 @@ class RoleService:
         permission_key: str,
         dept_ids: list[str],
     ) -> None:
-        """校验目标部门均在当前可见部门集合内，否则抛授权错误。"""
-        _ = permission_key
+        """校验目标部门均在当前可见部门集合内。"""
+        from hei_fastapi_ddd.shared.security.data_scope import resolve_data_scope_dept_ids
+
         unique_ids = list(dict.fromkeys(dept_ids))
         if not unique_ids:
             return

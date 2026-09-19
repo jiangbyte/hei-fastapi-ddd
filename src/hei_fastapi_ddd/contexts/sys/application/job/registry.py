@@ -33,25 +33,19 @@ def job_handler(name: str) -> Callable[[JobHandlerType], JobHandlerType]:
 
 
 def load_handlers() -> None:
-    """显式导入业务处理器模块，触发 @job_handler 注册（幂等）。
+    """加载 application 侧样例处理器（幂等）。
 
-    调度器启动时调用一次；resolve() 首次解析前也会兜底调用，
-    保证手动立即执行在未启动调度器的场景下同样可用。
+    基础设施侧处理器由 ``infrastructure.job.registry_loader`` 加载，
+    避免 application → infrastructure 依赖。
     """
     global _handlers_loaded
     if _handlers_loaded:
         return
     _handlers_loaded = True
-    from hei_fastapi_ddd.contexts.iam.application.account import (
-        tasks as _account_tasks,  # noqa: F401
-    )
-    from hei_fastapi_ddd.contexts.sys.application.audit import tasks as _audit_tasks  # noqa: F401
-    from hei_fastapi_ddd.contexts.sys.application.banner import tasks as _banner_tasks  # noqa: F401
     from hei_fastapi_ddd.contexts.sys.application.job import sample as _sample_tasks  # noqa: F401
-    from hei_fastapi_ddd.contexts.sys.application.job import tasks as _job_tasks  # noqa: F401
 
 
 def resolve(name: str) -> JobHandlerType | None:
-    """按标识解析处理器，未注册返回 None（首次调用前兜底加载处理器）。"""
+    """按标识解析处理器，未注册返回 None（首次调用前兜底加载 application 处理器）。"""
     load_handlers()
     return HANDLERS.get(name)

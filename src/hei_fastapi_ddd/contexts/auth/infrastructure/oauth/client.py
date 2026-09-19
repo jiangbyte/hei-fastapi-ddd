@@ -19,8 +19,8 @@ from hei_fastapi_ddd.contexts.auth.infrastructure.oauth.provider import (
 )
 from hei_fastapi_ddd.shared.config.enums import AccountType
 from hei_fastapi_ddd.shared.config.reader import config_reader
-from hei_fastapi_ddd.shared.exceptions.business import BusinessError
 from hei_fastapi_ddd.shared.http.client import get_http_client
+from hei_fastapi_ddd.types.business import BusinessError
 
 
 def oauth_config_key(account_type: AccountType, provider: OauthProvider, field: str) -> str:

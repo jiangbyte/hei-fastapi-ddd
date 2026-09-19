@@ -4,6 +4,7 @@ from datetime import UTC, datetime
 
 import pytest
 
+from hei_fastapi_ddd.contexts.iam.api.account_schemas import AccountAdminPageQuery
 from hei_fastapi_ddd.contexts.iam.application.account.account_application_service import (
     AccountService,
 )
@@ -15,12 +16,11 @@ from hei_fastapi_ddd.contexts.iam.infrastructure.persistence.account_po import (
 from hei_fastapi_ddd.contexts.iam.infrastructure.persistence.account_repository import (
     AccountRepository,
 )
-from hei_fastapi_ddd.contexts.iam.interfaces.http.account_schemas import AccountAdminPageQuery
 from hei_fastapi_ddd.contexts.profile.infrastructure.persistence.admin_po import ProfileUserAdmin
 from hei_fastapi_ddd.shared.config.enums import AccountStatusEnum, AccountType, DataScope
-from hei_fastapi_ddd.shared.exceptions.business import AuthorizationError
 from hei_fastapi_ddd.shared.schema.base import IdQuery
 from hei_fastapi_ddd.shared.security.session import SessionPayload
+from hei_fastapi_ddd.types.business import AuthorizationError
 from tests.iam_relation_helpers import account_dept
 
 

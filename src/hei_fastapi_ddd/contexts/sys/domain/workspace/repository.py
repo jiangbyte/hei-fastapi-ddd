@@ -1,26 +1,13 @@
-""" Author: Charlie
-
-workspace 仓储端口。
-"""
+"""workspace 仓储端口。"""
 
 from __future__ import annotations
 
-from typing import Protocol
-
-from hei_fastapi_ddd.contexts.sys.domain.workspace.aggregate import WorkspaceShortcut
+from collections.abc import Mapping, Sequence
+from typing import Any, Protocol
 
 
 class WorkspaceShortcutRepository(Protocol):
-    """workspace 仓储协议。"""
-
-    async def find_by_id(self, id: str) -> WorkspaceShortcut | None:
-        """按主键查找。"""
-        ...
-
-    async def save(self, entity: WorkspaceShortcut) -> WorkspaceShortcut:
-        """持久化聚合。"""
-        ...
-
-    async def delete_many(self, ids: list[str]) -> None:
-        """批量删除。"""
-        ...
+    async def list_by_account(self, account_id: str) -> list[dict[str, Any]]: ...
+    async def replace_for_account(
+        self, account_id: str, rows: Sequence[Mapping[str, Any]]
+    ) -> None: ...

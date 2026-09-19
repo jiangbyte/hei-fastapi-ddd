@@ -4,6 +4,9 @@
 """
 
 import secrets
+from collections.abc import Mapping
+from typing import Any
+
 from datetime import UTC, datetime
 
 from sqlalchemy import Select, and_, case, delete, func, or_, select, update
@@ -18,6 +21,8 @@ from hei_fastapi_ddd.contexts.iam.domain.enums import (
     IamRelationTargetType,
     IamRelationType,
 )
+from hei_fastapi_ddd.contexts.iam.infrastructure.persistence.mapping_util import mapping_data
+from hei_fastapi_ddd.contexts.iam.infrastructure.persistence.row_mapper import po_row
 from hei_fastapi_ddd.contexts.iam.infrastructure.persistence.account_po import (
     SysAccount,
     SysAccountIdentity,
@@ -33,27 +38,13 @@ from hei_fastapi_ddd.contexts.iam.infrastructure.persistence.relation_repository
     account_dept_condition,
 )
 from hei_fastapi_ddd.contexts.iam.infrastructure.persistence.role_po import SysRole
-from hei_fastapi_ddd.contexts.iam.interfaces.http.account_schemas import (
-    AccountAdminPageQuery,
-    AccountCancelPayload,
-    AccountCreateRequest,
-    AccountDeptAssignRequest,
-    AccountDeptGrantInfo,
-    AccountGrantDeptRequest,
-    AccountGrantGroupRequest,
-    AccountGrantRoleRequest,
-    AccountGroupAssignRequest,
-    AccountIdentityUpsertPayload,
-    AccountRoleAssignRequest,
-    AccountUpdateRequest,
-)
 from hei_fastapi_ddd.contexts.profile.infrastructure.persistence.admin_po import ProfileUserAdmin
 from hei_fastapi_ddd.contexts.profile.infrastructure.persistence.portal_po import ProfileUserPortal
 from hei_fastapi_ddd.contexts.sys.infrastructure.persistence.feedback_po import SysFeedback
 from hei_fastapi_ddd.contexts.sys.infrastructure.persistence.notice_po import SysNoticeRead
 from hei_fastapi_ddd.shared.config.enums import AccountStatusEnum
-from hei_fastapi_ddd.shared.exceptions.business import BusinessError, ConflictError, NotFoundError
 from hei_fastapi_ddd.shared.security.password import hash_password_async
+from hei_fastapi_ddd.types.business import BusinessError, ConflictError, NotFoundError
 
 _ACCOUNT_SUBJECT_RELATION_TYPES = [
     IamRelationType.ACCOUNT_ROLE,
@@ -64,37 +55,41 @@ _ACCOUNT_SUBJECT_RELATION_TYPES = [
 ]
 
 
-class AccountRepository:
+class AccountRepositoryImpl:
     """账户仓储，负责账户主表、账户归属和账户直接授权关系。"""
 
     def __init__(self, db: AsyncSession):
         self.db = db
         self.relations = IamRelationRepository(db)
 
-    async def get_by_id(self, account_id: str) -> SysAccount | None:
-        """按主键查询账户。"""
-        return await self.db.get(SysAccount, account_id)
-
-    async def get_required(self, account_id: str) -> SysAccount:
-        """按主键查询账户，不存在时抛出 NotFoundError。"""
-        entity = await self.get_by_id(account_id)
+    async def _require_entity(self, account_id: str) -> SysAccount:
+        entity = await self.db.get(SysAccount, account_id)
         if entity is None:
             raise NotFoundError("Account not found")
         return entity
 
-    async def get_account_by_id(self, account_id: str) -> SysAccount | None:
+    async def get_by_id(self, account_id: str) -> dict[str, Any] | None:
+        """按主键查询账户。"""
+        entity = await self.db.get(SysAccount, account_id)
+        return po_row(entity) if entity is not None else None
+
+    async def get_required(self, account_id: str) -> dict[str, Any]:
+        """按主键查询账户，不存在时抛出 NotFoundError。"""
+        return po_row(await self._require_entity(account_id))
+
+    async def get_account_by_id(self, account_id: str) -> dict[str, Any] | None:
         """按 ID 查询账户。"""
         return await self.get_by_id(account_id)
 
-    async def list_accounts_by_ids(self, account_ids: list[str]) -> list[SysAccount]:
+    async def list_accounts_by_ids(self, account_ids: list[str]) -> list[dict[str, Any]]:
         """按 ID 列表批量查询账户，空列表返回空。"""
         unique_ids = list(dict.fromkeys(account_ids))
         if not unique_ids:
             return []
         stmt = select(SysAccount).where(SysAccount.id.in_(unique_ids))
-        return list((await self.db.execute(stmt)).scalars().all())
+        return [po_row(item) for item in (await self.db.execute(stmt)).scalars().all()]
 
-    async def get_account_by_account(self, account: str) -> SysAccount | None:
+    async def get_account_by_account(self, account: str) -> dict[str, Any] | None:
         """按主账号标识查询账户（仅匹配已绑定的 ACCOUNT 类型标识）。"""
         stmt = (
             select(SysAccount)
@@ -105,13 +100,14 @@ class AccountRepository:
                 SysAccountIdentity.bind_status == AccountIdentityBindStatus.BOUND.value,
             )
         )
-        return (await self.db.execute(stmt)).scalar_one_or_none()
+        entity = (await self.db.execute(stmt)).scalar_one_or_none()
+        return po_row(entity) if entity is not None else None
 
     async def get_account_by_identifier(
         self,
         identifier: str,
         identity_types: list[AccountIdentityType] | None = None,
-    ) -> SysAccount | None:
+    ) -> dict[str, Any] | None:
         """按登录标识查询账户，多类型命中时按账号/邮箱/手机号优先级取一条。"""
         types = identity_types or [AccountIdentityType.ACCOUNT]
         stmt = (
@@ -136,34 +132,40 @@ class AccountRepository:
             )
             .limit(1)
         )
-        return (await self.db.execute(stmt)).scalars().first()
+        entity = (await self.db.execute(stmt)).scalars().first()
+        return po_row(entity) if entity is not None else None
 
-    async def create(self, payload: AccountCreateRequest, password_hash: str) -> SysAccount:
+    async def create(self, data: Mapping[str, Any], *, password_hash: str) -> dict[str, Any]:
         """创建账户主行并重建登录标识；账号已存在时抛冲突错误。"""
-        existing = await self.get_account_by_account(payload.account)
+        if hasattr(data, "model_dump"):
+            data = data.model_dump()
+        account_name = str(data.get("account") or "").strip()
+        account_type = getattr(data.get("account_type"), "value", data.get("account_type"))
+        account_status = getattr(data.get("account_status"), "value", data.get("account_status"))
+        existing = await self.get_account_by_account(account_name)
         if existing:
             raise ConflictError("Account already exists")
         account = SysAccount(
             password_hash=password_hash,
-            account_type=payload.account_type.value,
-            account_status=payload.account_status.value,
+            account_type=str(account_type),
+            account_status=str(account_status),
         )
         self.db.add(account)
         await self.db.flush()
-        await self.replace_account_login_identity(account.id, payload.account)
-        return account
+        await self.replace_account_login_identity(account.id, account_name)
+        return po_row(account)
 
-    async def update(self, payload: AccountUpdateRequest, password_hash: str | None = None) -> None:
+    async def update(self, account_id: str, data: Mapping[str, Any], *, password_hash: str | None = None) -> None:
         """更新账户主体与主登录标识；账号被其他账户占用时抛冲突错误。"""
-        entity = await self.get_required(payload.id)
-        existing = await self.get_account_by_account(payload.account)
-        if existing and existing.id != payload.id:
+        entity = await self._require_entity(account_id)
+        existing = await self.get_account_by_account(str(data.get("account") or ""))
+        if existing and existing.get("id") != account_id:
             raise ConflictError("Account already exists")
-        entity.account_type = payload.account_type.value
-        entity.account_status = payload.account_status.value
+        entity.account_type = getattr(data.get("account_type"), "value", data.get("account_type"))
+        entity.account_status = getattr(data.get("account_status"), "value", data.get("account_status"))
         if password_hash:
             entity.password_hash = password_hash
-        await self.replace_account_login_identity(payload.id, payload.account)
+        await self.replace_account_login_identity(account_id, str(data.get("account") or ""))
         await self.db.flush()
 
     async def replace_account_login_identity(self, account_id: str, account: str) -> None:
@@ -207,10 +209,10 @@ class AccountRepository:
         phone: str | None,
     ) -> None:
         """仅重建 EMAIL/PHONE 登录标识。"""
-        identities: list[AccountIdentityUpsertPayload] = []
+        identities: list[Mapping[str, Any]] = []
         if email_login_enabled and str(email or "").strip():
             identities.append(
-                AccountIdentityUpsertPayload(
+                Mapping[str, Any](
                     account_id=account_id,
                     identity_type=AccountIdentityType.EMAIL,
                     identifier=str(email).strip(),
@@ -220,7 +222,7 @@ class AccountRepository:
             )
         if phone_login_enabled and str(phone or "").strip():
             identities.append(
-                AccountIdentityUpsertPayload(
+                Mapping[str, Any](
                     account_id=account_id,
                     identity_type=AccountIdentityType.PHONE,
                     identifier=str(phone).strip(),
@@ -267,41 +269,41 @@ class AccountRepository:
 
     async def update_password_hash(self, account_id: str, password_hash: str) -> None:
         """仅更新账户密码哈希。"""
-        entity = await self.get_required(account_id)
+        entity = await self._require_entity(account_id)
         entity.password_hash = password_hash
         await self.db.flush()
 
     async def replace_account_identities(
         self,
         account_id: str,
-        payload: AccountCreateRequest | AccountUpdateRequest,
+        payload: Mapping[str, Any] | Mapping[str, Any],
     ) -> None:
         """全量重建账户登录标识，并在写入前校验标识未被其他账户占用。"""
         identity_specs = [
             (
                 AccountIdentityType.ACCOUNT,
-                payload.account,
+                payload["account"],
                 True,
                 True,
                 AccountIdentityBindStatus.BOUND,
             ),
             (
                 AccountIdentityType.EMAIL,
-                (payload.email_identity or payload.email) if payload.email_login_enabled else None,
+                (payload["email_identity"] or payload["email"]) if payload["email_login_enabled"] else None,
                 False,
-                payload.email_identity_verified,
-                payload.email_identity_bind_status,
+                payload["email_identity_verified"],
+                payload["email_identity_bind_status"],
             ),
             (
                 AccountIdentityType.PHONE,
-                (payload.phone_identity or payload.phone) if payload.phone_login_enabled else None,
+                (payload["phone_identity"] or payload["phone"]) if payload["phone_login_enabled"] else None,
                 False,
-                payload.phone_identity_verified,
-                payload.phone_identity_bind_status,
+                payload["phone_identity_verified"],
+                payload["phone_identity_bind_status"],
             ),
         ]
         identities = [
-            AccountIdentityUpsertPayload(
+            Mapping[str, Any](
                 account_id=account_id,
                 identity_type=identity_type,
                 identifier=str(identifier).strip(),
@@ -347,7 +349,7 @@ class AccountRepository:
     async def list_identities_by_account_ids(
         self,
         account_ids: list[str],
-    ) -> list[SysAccountIdentity]:
+    ) -> list[dict[str, Any]]:
         """按账户 ID 列表批量查询登录标识，主标识优先。"""
         unique_ids = list(dict.fromkeys(account_ids))
         if not unique_ids:
@@ -361,7 +363,7 @@ class AccountRepository:
                 SysAccountIdentity.id.asc(),
             )
         )
-        return list((await self.db.execute(stmt)).scalars().all())
+        return [po_row(item) for item in (await self.db.execute(stmt)).scalars().all()]
 
     async def has_identity(
         self,
@@ -385,7 +387,7 @@ class AccountRepository:
         enabled: bool = True,
     ) -> None:
         """新增或替换单个登录标识；禁用或空标识时仅删除旧记录。"""
-        await self.get_required(account_id)
+        await self._require_entity(account_id)
         normalized_identifier = str(identifier or "").strip() if enabled else ""
         await self.db.execute(
             delete(SysAccountIdentity).where(
@@ -428,11 +430,19 @@ class AccountRepository:
 
     async def cancel(
         self,
-        payload: AccountCancelPayload,
+        account_id_or_payload: str | Mapping[str, Any],
+        *,
         cancelled_by: str | None = None,
-    ) -> SysAccount:
+        cancel_reason: str | None = None,
+    ) -> dict[str, Any]:
         """软注销：标记 CANCELLED，并立即清理身份/授权/资料等关联数据。"""
-        entity = await self.get_required(payload.id)
+        if isinstance(account_id_or_payload, Mapping[str, Any]):
+            resolved_id = account_id_or_payload["id"]
+            resolved_reason = account_id_or_payload["cancel_reason"]
+        else:
+            resolved_id = account_id_or_payload
+            resolved_reason = cancel_reason
+        entity = await self._require_entity(resolved_id)
         if entity.account_status == AccountStatusEnum.CANCELLED.value:
             raise BusinessError("账号已注销")
         notify_email, notify_phone = await self._collect_cancel_notify_contacts(entity.id)
@@ -440,7 +450,7 @@ class AccountRepository:
         entity.account_status = AccountStatusEnum.CANCELLED.value
         entity.cancelled_at = entity.cancelled_at or now
         entity.cancelled_by = cancelled_by
-        entity.cancel_reason = payload.cancel_reason
+        entity.cancel_reason = resolved_reason
         entity.cancel_notify_email = notify_email
         entity.cancel_notify_phone = notify_phone
         entity.password_hash = await hash_password_async(f"cancelled:{secrets.token_urlsafe(32)}")
@@ -452,7 +462,7 @@ class AccountRepository:
         entity.latest_login_device = None
         await self._cleanup_account_side_data([entity.id])
         await self.db.flush()
-        return entity
+        return po_row(entity)
 
     async def _collect_cancel_notify_contacts(
         self,
@@ -570,7 +580,7 @@ class AccountRepository:
 
     async def page_admin(
         self,
-        query: AccountAdminPageQuery,
+        query: Mapping[str, Any],
         data_scope_filter: ColumnElement[bool] | None = None,
     ) -> tuple[list[SysAccount], int]:
         """按条件分页查询账户，并统计满足条件（含数据范围）的总数。"""
@@ -605,33 +615,33 @@ class AccountRepository:
                 account_dept_condition(SysIamRelation, SysAccount.id),
             )
         filters = []
-        if query.account:
-            filters.append(account_identity.identifier.contains(query.account))
-        if query.name:
+        if query["account"]:
+            filters.append(account_identity.identifier.contains(query["account"]))
+        if query["name"]:
             filters.append(
                 or_(
-                    ProfileUserAdmin.nickname.contains(query.name),
-                    ProfileUserPortal.nickname.contains(query.name),
+                    ProfileUserAdmin.nickname.contains(query["name"]),
+                    ProfileUserPortal.nickname.contains(query["name"]),
                 )
             )
-        if query.phone:
+        if query["phone"]:
             filters.append(
                 or_(
-                    ProfileUserAdmin.phone.contains(query.phone),
-                    ProfileUserPortal.phone.contains(query.phone),
+                    ProfileUserAdmin.phone.contains(query["phone"]),
+                    ProfileUserPortal.phone.contains(query["phone"]),
                 )
             )
-        if query.email:
+        if query["email"]:
             filters.append(
                 or_(
-                    ProfileUserAdmin.email.contains(query.email),
-                    ProfileUserPortal.email.contains(query.email),
+                    ProfileUserAdmin.email.contains(query["email"]),
+                    ProfileUserPortal.email.contains(query["email"]),
                 )
             )
-        if query.account_type:
-            filters.append(SysAccount.account_type == query.account_type.value)
-        if query.account_status:
-            filters.append(SysAccount.account_status == query.account_status.value)
+        if query["account_type"]:
+            filters.append(SysAccount.account_type == query["account_type"].value)
+        if query["account_status"]:
+            filters.append(SysAccount.account_status == query["account_status"].value)
         if data_scope_filter is not None:
             filters.append(data_scope_filter)
         if filters:
@@ -639,23 +649,23 @@ class AccountRepository:
             count_stmt = count_stmt.where(*filters)
         stmt = (
             stmt.order_by(SysAccount.id.desc())
-            .offset(query.offset)
-            .limit(query.size)
+            .offset(query["offset"])
+            .limit(query["size"])
         )
         accounts = list((await self.db.execute(stmt)).unique().scalars().all())
         total = (await self.db.execute(count_stmt)).scalar_one()
-        return accounts, total
+        return [po_row(item) for item in accounts], int(total)
 
-    async def assign_account_to_role(self, payload: AccountRoleAssignRequest) -> SysIamRelation:
+    async def assign_account_to_role(self, payload: Mapping[str, Any]) -> SysIamRelation:
         """为账户追加单个角色关系（账户与角色均需存在）。"""
-        account = await self.db.get(SysAccount, payload.account_id)
+        account = await self.db.get(SysAccount, payload["account_id"])
         if not account:
             raise NotFoundError("Account not found")
-        if not await self.db.get(SysRole, payload.role_id):
+        if not await self.db.get(SysRole, payload["role_id"]):
             raise NotFoundError("Role not found")
         relation = self.relations.account_role(
-            payload.account_id,
-            payload.role_id,
+            payload["account_id"],
+            payload["role_id"],
             account.account_type,
         )
         self.db.add(relation)
@@ -664,35 +674,35 @@ class AccountRepository:
 
     async def assign_account_to_group(
         self,
-        payload: AccountGroupAssignRequest,
+        payload: Mapping[str, Any],
     ) -> SysIamRelation:
         """为账户追加单个账户组关系（账户与组均需存在）。"""
-        account = await self.db.get(SysAccount, payload.account_id)
+        account = await self.db.get(SysAccount, payload["account_id"])
         if not account:
             raise NotFoundError("Account not found")
-        if not await self.db.get(SysGroup, payload.group_id):
+        if not await self.db.get(SysGroup, payload["group_id"]):
             raise NotFoundError("Group not found")
         relation = self.relations.account_group(
-            payload.account_id,
-            payload.group_id,
+            payload["account_id"],
+            payload["group_id"],
             account.account_type,
         )
         self.db.add(relation)
         await self.db.flush()
         return relation
 
-    async def assign_account_to_dept(self, payload: AccountDeptAssignRequest) -> SysIamRelation:
+    async def assign_account_to_dept(self, payload: Mapping[str, Any]) -> SysIamRelation:
         """为账户追加单个部门关系（账户与部门均需存在）。"""
-        account = await self.db.get(SysAccount, payload.account_id)
+        account = await self.db.get(SysAccount, payload["account_id"])
         if not account:
             raise NotFoundError("Account not found")
-        if not await self.db.get(SysDept, payload.dept_id):
+        if not await self.db.get(SysDept, payload["dept_id"]):
             raise NotFoundError("Dept not found")
         relation = self.relations.account_dept(
-            payload.account_id,
-            payload.dept_id,
+            payload["account_id"],
+            payload["dept_id"],
             account.account_type,
-            payload.is_primary,
+            payload["is_primary"],
         )
         self.db.add(relation)
         await self.db.flush()
@@ -716,7 +726,7 @@ class AccountRepository:
         data_scope_filter: ColumnElement[bool] | None = None,
     ) -> list[str]:
         """列出账户直接绑定的角色 ID，可叠加数据范围过滤。"""
-        await self.get_required(account_id)
+        await self._require_entity(account_id)
         stmt = select(SysIamRelation.target_id).where(
             SysIamRelation.subject_type == IamRelationSubjectType.ACCOUNT.value,
             SysIamRelation.subject_id == account_id,
@@ -729,10 +739,10 @@ class AccountRepository:
             )
         return [str(value) for value in (await self.db.execute(stmt)).scalars().all()]
 
-    async def replace_account_roles(self, payload: AccountGrantRoleRequest) -> None:
+    async def replace_account_roles(self, payload: Mapping[str, Any]) -> None:
         """全量替换账户的角色关系（先删后建，角色需全部存在）。"""
-        account = await self.get_required(payload.id)
-        role_ids = list(dict.fromkeys(payload.role_ids))
+        account = await self._require_entity(payload["id"])
+        role_ids = list(dict.fromkeys(payload["role_ids"]))
         if role_ids:
             stmt = select(SysRole.id).where(SysRole.id.in_(role_ids))
             existing_ids = set((await self.db.execute(stmt)).scalars().all())
@@ -740,13 +750,13 @@ class AccountRepository:
                 raise NotFoundError("Role not found")
         await self.relations.delete_subject_relations(
             IamRelationSubjectType.ACCOUNT.value,
-            payload.id,
+            payload["id"],
             IamRelationType.ACCOUNT_ROLE,
             account_type=account.account_type,
         )
         for role_id in role_ids:
             self.db.add(
-                self.relations.account_role(payload.id, role_id, account.account_type)
+                self.relations.account_role(payload["id"], role_id, account.account_type)
             )
         await self.db.flush()
 
@@ -768,7 +778,7 @@ class AccountRepository:
         data_scope_filter: ColumnElement[bool] | None = None,
     ) -> list[str]:
         """列出账户直接绑定的账户组 ID，可叠加数据范围过滤。"""
-        await self.get_required(account_id)
+        await self._require_entity(account_id)
         stmt = select(SysIamRelation.target_id).where(
             SysIamRelation.subject_type == IamRelationSubjectType.ACCOUNT.value,
             SysIamRelation.subject_id == account_id,
@@ -781,10 +791,10 @@ class AccountRepository:
             )
         return [str(value) for value in (await self.db.execute(stmt)).scalars().all()]
 
-    async def replace_account_groups(self, payload: AccountGrantGroupRequest) -> None:
+    async def replace_account_groups(self, payload: Mapping[str, Any]) -> None:
         """全量替换账户的账户组关系（先删后建，组需全部存在）。"""
-        account = await self.get_required(payload.id)
-        group_ids = list(dict.fromkeys(payload.group_ids))
+        account = await self._require_entity(payload["id"])
+        group_ids = list(dict.fromkeys(payload["group_ids"]))
         if group_ids:
             stmt = select(SysGroup.id).where(SysGroup.id.in_(group_ids))
             existing_ids = set((await self.db.execute(stmt)).scalars().all())
@@ -792,13 +802,13 @@ class AccountRepository:
                 raise NotFoundError("Group not found")
         await self.relations.delete_subject_relations(
             IamRelationSubjectType.ACCOUNT.value,
-            payload.id,
+            payload["id"],
             IamRelationType.ACCOUNT_GROUP,
             account_type=account.account_type,
         )
         for group_id in group_ids:
             self.db.add(
-                self.relations.account_group(payload.id, group_id, account.account_type)
+                self.relations.account_group(payload["id"], group_id, account.account_type)
             )
         await self.db.flush()
 
@@ -806,9 +816,9 @@ class AccountRepository:
         self,
         account_id: str,
         visible_dept_ids: list[str] | None = None,
-    ) -> list[AccountDeptGrantInfo]:
+    ) -> list[dict[str, Any]]:
         """列出账户的部门授权关系，可按可见部门 ID 过滤。"""
-        await self.get_required(account_id)
+        await self._require_entity(account_id)
         stmt = (
             select(SysIamRelation)
             .where(
@@ -823,14 +833,14 @@ class AccountRepository:
             stmt = stmt.where(SysIamRelation.target_id.in_(visible_dept_ids))
         grants = list((await self.db.execute(stmt)).scalars().all())
         return [
-            AccountDeptGrantInfo(dept_id=grant.target_id, is_primary=grant.is_primary)
+            {"dept_id": grant.target_id, "is_primary": grant.is_primary}
             for grant in grants
         ]
 
-    async def replace_account_depts(self, payload: AccountGrantDeptRequest) -> None:
+    async def replace_account_depts(self, payload: Mapping[str, Any]) -> None:
         """全量替换账户的部门关系，且仅首个主部门标记 is_primary。"""
-        account = await self.get_required(payload.id)
-        dept_ids = list(dict.fromkeys(item.dept_id for item in payload.grant_info_list))
+        account = await self._require_entity(payload["id"])
+        dept_ids = list(dict.fromkeys(item.dept_id for item in payload["grant_info_list"]))
         if dept_ids:
             stmt = select(SysDept.id).where(SysDept.id.in_(dept_ids))
             existing_ids = set((await self.db.execute(stmt)).scalars().all())
@@ -839,16 +849,16 @@ class AccountRepository:
         primary_seen = False
         await self.relations.delete_subject_relations(
             IamRelationSubjectType.ACCOUNT.value,
-            payload.id,
+            payload["id"],
             IamRelationType.ACCOUNT_DEPT,
             account_type=account.account_type,
         )
-        for item in payload.grant_info_list:
+        for item in payload["grant_info_list"]:
             is_primary = bool(item.is_primary) and not primary_seen
             primary_seen = primary_seen or is_primary
             self.db.add(
                 self.relations.account_dept(
-                    payload.id,
+                    payload["id"],
                     item.dept_id,
                     account.account_type,
                     is_primary,
@@ -858,7 +868,7 @@ class AccountRepository:
 
     async def get_account_role_ids(self, account_id: str) -> list[str]:
         """合并账户直接角色与所属账户组的角色，去重返回角色 ID。"""
-        account = await self.get_required(account_id)
+        account = await self._require_entity(account_id)
         account_type = account.account_type
         account_group_rel = aliased(SysIamRelation)
         group_role_rel = aliased(SysIamRelation)
@@ -895,7 +905,7 @@ class AccountRepository:
 
     async def get_account_role_codes(self, account_id: str) -> list[str]:
         """合并账户直接角色与所属账户组的角色，去重返回角色编码。"""
-        account = await self.get_required(account_id)
+        account = await self._require_entity(account_id)
         account_type = account.account_type
         account_group_rel = aliased(SysIamRelation)
         group_role_rel = aliased(SysIamRelation)
@@ -954,3 +964,6 @@ class AccountRepository:
             SysIamRelation.target_type == IamRelationTargetType.DEPT.value,
         )
         return [str(value) for value in (await self.db.execute(stmt)).scalars().all()]
+
+
+AccountRepository = AccountRepositoryImpl

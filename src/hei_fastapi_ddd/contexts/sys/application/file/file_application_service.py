@@ -16,27 +16,17 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from hei_fastapi_ddd.contexts.sys.application.file.content_disposition import (
     content_disposition_attachment,
 )
-from hei_fastapi_ddd.contexts.sys.infrastructure.persistence.file_po import SysFile
-from hei_fastapi_ddd.contexts.sys.infrastructure.persistence.file_repository import FileRepository
-from hei_fastapi_ddd.contexts.sys.interfaces.http.file_schemas import (
+from hei_fastapi_ddd.contexts.sys.application.file.dto import (
     FileAdminPageQuery,
-    FileRecordCreate,
-    FileUpdateRequest,
-    FileUploadRequest,
+    FileUpdateCommand,
+    FileUploadCommand,
     ObjectNameQuery,
-    SysFileSchema,
 )
+from hei_fastapi_ddd.contexts.sys.domain.file.repository import FileRepository
 from hei_fastapi_ddd.shared.audit import snapshots as audit_snapshots
 from hei_fastapi_ddd.shared.config.settings import settings
-from hei_fastapi_ddd.shared.exceptions.business import (
-    AuthorizationError,
-    BusinessError,
-    NotFoundError,
-)
 from hei_fastapi_ddd.shared.observability.metrics import record_file_upload_rejected
 from hei_fastapi_ddd.shared.persistence.transaction import transactional
-from hei_fastapi_ddd.shared.schema.base import IdQuery, IdsRequest, to_schema, to_schema_list
-from hei_fastapi_ddd.shared.security.data_scope import build_data_scope_filter
 from hei_fastapi_ddd.shared.security.session import SessionPayload
 from hei_fastapi_ddd.shared.storage.config import StorageConfig
 from hei_fastapi_ddd.shared.storage.manager import get_storage, resolve_storage_config
@@ -47,6 +37,11 @@ from hei_fastapi_ddd.shared.storage.url import (
     to_object_key,
 )
 from hei_fastapi_ddd.shared.web.pagination import PageData, PageQuery, build_page
+from hei_fastapi_ddd.types.business import (
+    AuthorizationError,
+    BusinessError,
+    NotFoundError,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -65,10 +60,10 @@ def _is_invalid_public_object_name(object_name: str) -> bool:
 class FileService:
     """文件服务，负责对象存储写入与文件元数据落库的一致性编排。"""
 
-    def __init__(self, db: AsyncSession) -> None:
-        """绑定会话并初始化仓储。"""
+    def __init__(self, db: AsyncSession, repo: FileRepository) -> None:
+        """绑定会话并注入仓储端口。"""
         self.db = db
-        self.repo = FileRepository(db)
+        self.repo = repo
 
     def build_object_name(self, filename: str, category: str = "uploads") -> str:
         """构造对象存储路径，按日期分片 + UUID，不暴露原始文件名。"""
@@ -79,7 +74,7 @@ class FileService:
         prefix = f"{category}/" if category else ""
         return f"{prefix}{now:%Y}/{now:%m}/{now:%d}/{uuid4().hex}{suffix}"
 
-    async def upload(self, payload: FileUploadRequest) -> SysFileSchema:
+    async def upload(self, payload: FileUploadCommand) -> dict:
         """上传文件并创建元数据记录，参数通过对象统一承载。"""
         self._validate_upload(payload)
         storage_config = self._resolve_upload_storage_config(payload)
@@ -98,19 +93,18 @@ class FileService:
         try:
             async with transactional(self.db):
                 entity = await self.repo.create(
-                    FileRecordCreate(
-                        object_name=object_name,
-                        original_name=PurePosixPath(payload.filename).name,
-                        storage_provider=storage_config.provider,
-                        bucket=storage_config.bucket or None,
-                        content_type=payload.content_type,
-                        size=len(payload.content),
-                        # 落库存 object key（对齐 hei-boot）；响应再解析为可访问 URL。
-                        url=object_name,
-                    )
+                    {
+                        "object_name": object_name,
+                        "original_name": PurePosixPath(payload.filename).name,
+                        "storage_provider": storage_config.provider,
+                        "bucket": storage_config.bucket or None,
+                        "content_type": payload.content_type,
+                        "size": len(payload.content),
+                        "url": object_name,
+                    }
                 )
                 audit_snapshots.created_entity(entity)
-            return self._with_resolved_url(to_schema(SysFileSchema, entity))
+            return self._with_resolved_url(dict(entity))
         except Exception:
             # 补偿：元数据提交失败时避免孤立对象。
             try:
@@ -123,21 +117,21 @@ class FileService:
                 )
             raise
 
-    async def update(self, payload: FileUpdateRequest) -> None:
+    async def update(self, payload: FileUpdateCommand) -> None:
         """事务内更新文件信息。"""
         entity = await self.repo.get_required(payload.id)
         audit_snapshots.before_entity(entity)
         async with transactional(self.db):
-            await self.repo.update(payload)
-            await self.db.refresh(entity)
-            audit_snapshots.after_entity(entity)
+            await self.repo.update(payload.id, {"original_name": payload.original_name})
+            after = await self.repo.get_required(payload.id)
+            audit_snapshots.after_entity(after)
 
-    async def delete(self, payload: IdsRequest) -> None:
+    async def delete(self, ids: list[str]) -> None:
         """按文件 ID 批量删除对象存储文件和文件元数据（对齐 hei-boot）。
 
         存储删除失败不阻断元数据清理（残留/存储不可达时仍删除库记录），仅记录告警。
         """
-        unique_ids = list(dict.fromkeys(payload.ids))
+        unique_ids = list(dict.fromkeys(ids))
         entities = await self.repo.list_by_ids(unique_ids)
         if not entities:
             return
@@ -146,26 +140,26 @@ class FileService:
             # 对象存储删除为外部 I/O，有界并发避免逐文件串行等待。
             semaphore = asyncio.Semaphore(8)
 
-            async def _delete_object(entity: SysFile) -> None:
+            async def _delete_object(entity: dict) -> None:
                 async with semaphore:
                     try:
                         await asyncio.to_thread(
                             self._get_storage(
                                 self._resolve_entity_storage_config(entity)
                             ).delete_object,
-                            entity.object_name,
+                            entity["object_name"],
                         )
                     except Exception as exc:
                         logger.warning(
                             "Failed to delete storage object, skip (id=%s, object=%s, provider=%s): %s",
-                            entity.id,
-                            entity.object_name,
-                            entity.storage_provider,
+                            entity.get("id"),
+                            entity.get("object_name"),
+                            entity.get("storage_provider"),
                             exc,
                         )
 
             await asyncio.gather(*[_delete_object(entity) for entity in entities])
-            await self.repo.delete_many([entity.id for entity in entities])
+            await self.repo.delete_many([str(entity["id"]) for entity in entities])
 
     async def delete_by_object_name(self, object_name: str) -> None:
         """按对象存储路径删除文件和元数据（对齐 hei-boot）。
@@ -186,37 +180,36 @@ class FileService:
             except Exception as exc:
                 logger.warning(
                     "Failed to delete storage object, skip (id=%s, object=%s, provider=%s): %s",
-                    entity.id,
-                    entity.object_name,
-                    entity.storage_provider,
+                    entity.get("id"),
+                    entity.get("object_name"),
+                    entity.get("storage_provider"),
                     exc,
                 )
-            await self.repo.delete(entity)
+            await self.repo.delete_by_id(str(entity["id"]))
 
     async def detail(
         self,
-        query: IdQuery,
+        file_id: str,
         session: SessionPayload | None = None,
-    ) -> SysFileSchema:
-        """查询文件详情并解析访问 URL 与昵称（传入 session 时校验归属）。"""
-        entity = await self.repo.get_required(query.id)
+    ) -> dict:
+        """查询文件详情并解析访问 URL。"""
+        entity = await self.repo.get_required(file_id)
         if session is not None:
             self.assert_owned_by_current(entity, session)
-        schema = self._with_resolved_url(to_schema(SysFileSchema, entity))
-        return schema
+        return self._with_resolved_url(dict(entity))
 
     async def list_by_ids(
         self,
-        payload: IdsRequest,
+        ids: list[str],
         session: SessionPayload | None = None,
-    ) -> list[SysFileSchema]:
-        """按 ID 列表查询文件元数据（缺失 ID 静默跳过，对齐 hei-boot 幂等语义）。"""
-        unique_ids = list(dict.fromkeys(payload.ids))
+    ) -> list[dict]:
+        """按 ID 列表查询文件元数据。"""
+        unique_ids = list(dict.fromkeys(ids))
         entities = await self.repo.list_by_ids(unique_ids)
         if session is not None:
             for entity in entities:
                 self.assert_owned_by_current(entity, session)
-        return [self._with_resolved_url(to_schema(SysFileSchema, entity)) for entity in entities]
+        return [self._with_resolved_url(dict(entity)) for entity in entities]
 
     async def resolve_access_url(self, value: str | None) -> str | None:
         """解析可浏览器访问的 URL（永久直连或重新签发预签名），对齐 hei-boot resolveAccessUrl。"""
@@ -253,7 +246,7 @@ class FileService:
             return result
 
         entities = await self.repo.list_by_object_names(list(pending_keys.keys()))
-        entity_by_key = {entity.object_name: entity for entity in entities}
+        entity_by_key = {entity["object_name"]: entity for entity in entities}
 
         for key, raws in pending_keys.items():
             entity = entity_by_key.get(key)
@@ -264,7 +257,7 @@ class FileService:
                 logger.warning(
                     "Failed to resolve file URL | key=%s provider=%s",
                     key,
-                    getattr(entity, "storage_provider", None),
+                    entity.get("storage_provider") if entity else None,
                     exc_info=True,
                 )
                 resolved = None
@@ -273,35 +266,19 @@ class FileService:
         return result
 
     async def scrub_persisted_presigned_urls(self) -> int:
-        """将库内疑似预签名的 sys_file.url 刷回 object_name（对齐 Boot patch 语义）。"""
-        from sqlalchemy import select, update
-
-        rows = list((await self.db.execute(select(SysFile.id, SysFile.object_name, SysFile.url))).all())
-        changed = 0
-        for file_id, object_name, url in rows:
-            if not url or url == object_name:
-                continue
-            if looks_like_presigned_url(url) or (
-                is_external_url(url) and to_object_key(url) == object_name
-            ):
-                await self.db.execute(
-                    update(SysFile).where(SysFile.id == file_id).values(url=object_name)
-                )
-                changed += 1
-        if changed:
-            await self.db.flush()
-        return changed
+        """将库内疑似预签名的 sys_file.url 刷回 object_name。"""
+        return await self.repo.scrub_persisted_presigned_urls()
 
     async def download_by_id(
         self,
-        query: IdQuery,
+        file_id: str,
         session: SessionPayload | None = None,
     ) -> Response:
         """按 ID 下载文件（传入 session 时校验归属）。"""
-        entity = await self.repo.get_required(query.id)
+        entity = await self.repo.get_required(file_id)
         if session is not None:
             self.assert_owned_by_current(entity, session)
-        return await self.response(ObjectNameQuery(object_name=entity.object_name))
+        return await self.response(ObjectNameQuery(object_name=str(entity["object_name"])))
 
     async def get_url(
         self,
@@ -363,7 +340,7 @@ class FileService:
             media_type="application/octet-stream",
             headers={
                 "X-Content-Type-Options": "nosniff",
-                "Content-Disposition": content_disposition_attachment(entity.original_name),
+                "Content-Disposition": content_disposition_attachment(str(entity["original_name"])),
             },
         )
 
@@ -371,63 +348,55 @@ class FileService:
         self,
         query: FileAdminPageQuery | PageQuery,
         session: SessionPayload | None = None,
-    ) -> PageData[SysFileSchema]:
+    ) -> PageData[dict]:
         """分页列出文件元数据记录。"""
         page_query = (
             query
             if isinstance(query, FileAdminPageQuery)
             else FileAdminPageQuery(current=query.current, size=query.size)
         )
-        data_scope_filter = None
-        if session is not None:
-            data_scope_filter = await build_data_scope_filter(
-                self.db,
-                session,
-                "sys:file:page",
-                owner_column=SysFile.created_by,
-            )
-        items, total = await self.repo.list_files(
-            page_query,
-            data_scope_filter,
+        items, total = await self.repo.page_admin(
+            page_query.model_dump(exclude={"current", "size"}),
+            offset=page_query.offset,
+            limit=page_query.size,
+            session=session,
         )
-        schemas = [
-            self._with_resolved_url(schema) for schema in to_schema_list(SysFileSchema, items)
-        ]
-        return build_page(page_query, total, schemas)
+        records = [self._with_resolved_url(dict(item)) for item in items]
+        return build_page(page_query, total, records)  # type: ignore[arg-type]
 
     def assert_owned_by_current(
         self,
-        entity: SysFile | None,
+        entity: dict | None,
         session: SessionPayload,
     ) -> None:
-        """校验文件归属当前账户（null→404，非本人→403），对齐 hei-boot 门户文件接口。"""
+        """校验文件归属当前账户。"""
         if entity is None:
             raise NotFoundError("File not found")
-        if str(entity.created_by) != str(session.account_id):
+        if str(entity.get("created_by")) != str(session.account_id):
             raise AuthorizationError("无权访问该文件")
 
-    def _with_resolved_url(self, schema: SysFileSchema) -> SysFileSchema:
+    def _with_resolved_url(self, row: dict) -> dict:
         """按存储配置解析并回填文件的访问 URL。"""
-        storage_config = resolve_storage_config(provider=schema.storage_provider)
-        resolved_url = self._get_storage(storage_config).get_object_url(schema.object_name)
-        schema.url = str(resolved_url) or schema.url
-        return schema
+        storage_config = resolve_storage_config(provider=row.get("storage_provider"))
+        resolved_url = self._get_storage(storage_config).get_object_url(str(row["object_name"]))
+        row["url"] = str(resolved_url) or row.get("url")
+        return row
 
-    def _resolve_upload_storage_config(self, payload: FileUploadRequest) -> StorageConfig:
+    def _resolve_upload_storage_config(self, payload: FileUploadCommand) -> StorageConfig:
         """根据上传请求解析目标存储配置。"""
         return resolve_storage_config(provider=payload.storage_provider)
 
-    def _resolve_entity_storage_config(self, entity: SysFile | None) -> StorageConfig:
+    def _resolve_entity_storage_config(self, entity: dict | None) -> StorageConfig:
         """根据文件记录解析其存储配置，无记录时回退默认。"""
         if entity is None:
             return resolve_storage_config()
-        return resolve_storage_config(provider=entity.storage_provider)
+        return resolve_storage_config(provider=entity.get("storage_provider"))
 
     def _get_storage(self, config: StorageConfig):
         """按配置获取存储实现。"""
         return get_storage(config.id)
 
-    def _validate_upload(self, payload: FileUploadRequest) -> None:
+    def _validate_upload(self, payload: FileUploadCommand) -> None:
         """校验上传文件的扩展名、类型、大小与分类。"""
         safe_name = PurePosixPath(payload.filename).name
         logger.info(
@@ -464,7 +433,7 @@ class FileService:
         if payload.object_name:
             self._validate_object_name(payload.object_name)
 
-    def _validate_content_magic_bytes(self, payload: FileUploadRequest) -> None:
+    def _validate_content_magic_bytes(self, payload: FileUploadCommand) -> None:
         """校验文件内容 magic bytes 是否与声明的 content type 一致。
 
         仅检查下方注册表中有已知 magic 签名的 content type。

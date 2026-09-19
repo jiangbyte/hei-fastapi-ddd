@@ -14,49 +14,46 @@ if TYPE_CHECKING:
         ProfileIdentityService,
     )
 
+from hei_fastapi_ddd.contexts.profile.application.identity.dto import RealNameCaseSubmitCommand
 from hei_fastapi_ddd.contexts.profile.application.identity import crypto as identity_crypto
 from hei_fastapi_ddd.contexts.profile.domain.identity.enums import (
     IdentitySnapshotStatus,
     RealNameBusinessType,
 )
-from hei_fastapi_ddd.contexts.profile.infrastructure.persistence.identity_po import RealNameCase
-from hei_fastapi_ddd.contexts.profile.infrastructure.persistence.identity_repository import (
-    ProfileIdentityRepository,
-    RealNameCaseRepository,
+from hei_fastapi_ddd.contexts.profile.domain.identity.ports import (
+    ProfileIdentityRepositoryPort,
+    RealNameCaseRepositoryPort,
 )
-from hei_fastapi_ddd.contexts.profile.interfaces.http.identity_schemas import (
-    RealNameCaseSubmitRequest,
-)
-from hei_fastapi_ddd.shared.exceptions.business import BusinessError
+from hei_fastapi_ddd.types.business import BusinessError
 
 
 class RealNameBusinessHandler(Protocol):
     def business_type(self) -> str: ...
 
     async def validate_submit(
-        self, account_id: str, param: RealNameCaseSubmitRequest
+        self, account_id: str, param: RealNameCaseSubmitCommand
     ) -> None: ...
 
-    async def on_approved(self, case: RealNameCase, reviewer_id: str) -> None: ...
+    async def on_approved(self, case, reviewer_id: str) -> None: ...
 
     async def on_rejected(
-        self, case: RealNameCase, reviewer_id: str, reason: str
+        self, case, reviewer_id: str, reason: str
     ) -> None: ...
 
 
 class AccountVerifyHandler:
     """账号实名认证业务 Handler。"""
 
-    def __init__(self, db: AsyncSession, profile_service: ProfileIdentityService | None = None):
+    def __init__(self, db: AsyncSession, *, identity_repo: ProfileIdentityRepositoryPort, case_repo: RealNameCaseRepositoryPort, profile_service: ProfileIdentityService | None = None):
         self.db = db
-        self.identity_repo = ProfileIdentityRepository(db)
-        self.case_repo = RealNameCaseRepository(db)
+        self.identity_repo = identity_repo
+        self.case_repo = case_repo
         self._profile_service = profile_service
 
     def business_type(self) -> str:
         return RealNameBusinessType.ACCOUNT_VERIFY.value
 
-    async def validate_submit(self, account_id: str, param: RealNameCaseSubmitRequest) -> None:
+    async def validate_submit(self, account_id: str, param: RealNameCaseSubmitCommand) -> None:
         identity = await self.identity_repo.get_by_account_id(account_id)
         if identity is not None and identity.status == IdentitySnapshotStatus.VERIFIED.value:
             raise BusinessError("账号已完成实名认证")
@@ -67,17 +64,17 @@ class AccountVerifyHandler:
             param.document_type, param.document_no, exclude_account_id=account_id
         )
 
-    async def on_approved(self, case: RealNameCase, reviewer_id: str) -> None:
+    async def on_approved(self, case, reviewer_id: str) -> None:
         if self._profile_service is None:
             from hei_fastapi_ddd.contexts.profile.application.identity.identity_application_service import (
                 ProfileIdentityService,
             )
 
-            self._profile_service = ProfileIdentityService(self.db)
+            raise RuntimeError('profile_service is required for approval handler')
         await self._profile_service.upsert_on_approve(case, reviewer_id)
 
     async def on_rejected(
-        self, case: RealNameCase, reviewer_id: str, reason: str
+        self, case, reviewer_id: str, reason: str
     ) -> None:
         return None
 
@@ -106,9 +103,9 @@ class AccountVerifyHandler:
 
 
 class RealNameBusinessHandlerRegistry:
-    def __init__(self, db: AsyncSession, profile_service: ProfileIdentityService | None = None):
+    def __init__(self, db: AsyncSession, *, identity_repo: ProfileIdentityRepositoryPort, case_repo: RealNameCaseRepositoryPort, profile_service: ProfileIdentityService | None = None):
         handlers: list[RealNameBusinessHandler] = [
-            AccountVerifyHandler(db, profile_service=profile_service),
+            AccountVerifyHandler(db, identity_repo=identity_repo, case_repo=case_repo, profile_service=profile_service),
         ]
         self._handlers = {handler.business_type().upper(): handler for handler in handlers}
 

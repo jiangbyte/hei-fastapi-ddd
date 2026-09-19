@@ -1,26 +1,36 @@
-""" Author: Charlie
-
-audit 仓储端口。
-"""
+"""audit 仓储端口。"""
 
 from __future__ import annotations
 
-from typing import Protocol
+from collections.abc import Mapping
+from datetime import datetime
+from typing import Any, Protocol
 
-from hei_fastapi_ddd.contexts.sys.domain.audit.aggregate import AuditLog
+
+class OperationAuditRepository(Protocol):
+    async def create(self, data: Mapping[str, Any]) -> dict[str, Any]: ...
+    async def get_required(self, audit_id: str) -> dict[str, Any]: ...
+    async def page_admin(
+        self, filters: Mapping[str, Any], *, offset: int, limit: int
+    ) -> tuple[list[dict[str, Any]], int]: ...
+    async def cleanup_expired_login_logs(self, *, retention_days: int, batch_size: int) -> int: ...
+    async def cleanup_expired_operation_logs(
+        self, *, retention_days: int, batch_size: int
+    ) -> int: ...
 
 
-class AuditLogRepository(Protocol):
-    """audit 仓储协议。"""
+class AuditAnalysisRepository(Protocol):
+    async def count_since(self, since: datetime) -> int: ...
+    async def list_sensitive_actions_since(
+        self, since: datetime, actions: tuple[str, ...]
+    ) -> list[dict]: ...
+    async def count_sensitive_ops_by_account(
+        self, since: datetime, actions: tuple[str, ...]
+    ) -> list[dict]: ...
+    async def count_delete_ops_by_account(self, since: datetime, threshold: int) -> list[dict]: ...
+    async def count_login_ips_by_account(self, since: datetime, threshold: int) -> list[dict]: ...
 
-    async def find_by_id(self, id: str) -> AuditLog | None:
-        """按主键查找。"""
-        ...
 
-    async def save(self, entity: AuditLog) -> AuditLog:
-        """持久化聚合。"""
-        ...
-
-    async def delete_many(self, ids: list[str]) -> None:
-        """批量删除。"""
-        ...
+class AlertLogRepository(Protocol):
+    async def latest_created_by_rules(self, rule_names: list[str]) -> dict[str, datetime]: ...
+    async def append_many(self, items: list[Mapping[str, Any]]) -> None: ...

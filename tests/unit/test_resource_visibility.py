@@ -4,6 +4,12 @@ import uuid
 
 import pytest
 
+from hei_fastapi_ddd.contexts.iam.api.resource_schemas import (
+    ResourceCreateRequest,
+    ResourceModuleAdminPageQuery,
+    ResourceTreeQuery,
+    ResourceUpdateRequest,
+)
 from hei_fastapi_ddd.contexts.iam.application.resource.resource_application_service import (
     ResourceModuleService,
     ResourceService,
@@ -14,15 +20,9 @@ from hei_fastapi_ddd.contexts.iam.infrastructure.persistence.resource_po import 
     SysResource,
     SysResourceModule,
 )
-from hei_fastapi_ddd.contexts.iam.interfaces.http.resource_schemas import (
-    ResourceCreateRequest,
-    ResourceModuleAdminPageQuery,
-    ResourceTreeQuery,
-    ResourceUpdateRequest,
-)
 from hei_fastapi_ddd.shared.config.enums import AccountStatusEnum, AccountType, StatusEnum
-from hei_fastapi_ddd.shared.exceptions.business import ConflictError
 from hei_fastapi_ddd.shared.security.session import SessionPayload
+from hei_fastapi_ddd.types.business import ConflictError
 from tests.iam_relation_helpers import subject_resource_grant
 
 

@@ -6,20 +6,20 @@
 from __future__ import annotations
 
 import logging
+from collections.abc import Mapping
 from typing import Any
 
 import httpx
 
-from hei_fastapi_ddd.contexts.profile.domain.identity.enums import VerifyChannel
-from hei_fastapi_ddd.contexts.profile.infrastructure.persistence.identity_po import RealNameCase
-from hei_fastapi_ddd.contexts.profile.interfaces.http.identity_schemas import (
-    RealNameCaseCallbackRequest,
+from hei_fastapi_ddd.contexts.profile.application.identity.dto import (
+    RealNameCaseCallbackCommand,
     RealNameCaseInitResponse,
-    RealNameCaseInitThirdPartyRequest,
+    RealNameCaseInitThirdPartyCommand,
 )
+from hei_fastapi_ddd.contexts.profile.domain.identity.enums import VerifyChannel
 from hei_fastapi_ddd.shared.config.settings import settings
-from hei_fastapi_ddd.shared.exceptions.business import BusinessError
 from hei_fastapi_ddd.shared.security.safe_url import UnsafeUrlError, validate_outbound_url
+from hei_fastapi_ddd.types.business import BusinessError
 
 logger = logging.getLogger(__name__)
 
@@ -33,18 +33,19 @@ class ThirdPartyIdentityVerifyProvider:
 
     async def init_verify(
         self,
-        case: RealNameCase,
-        param: RealNameCaseInitThirdPartyRequest,
+        case: Mapping[str, Any],
+        param: RealNameCaseInitThirdPartyCommand,
     ) -> RealNameCaseInitResponse:
         init_url = (settings.profile_identity.third_party_init_url or "").strip()
         if not init_url:
             raise BusinessError("Third-party identity provider is not configured")
 
+        case_id = str(case["case_id"])
         payload = {
-            "case_id": case.case_id,
-            "account_id": case.account_id,
-            "document_type": case.document_type,
-            "business_type": case.business_type,
+            "case_id": case_id,
+            "account_id": case.get("account_id"),
+            "document_type": case.get("document_type"),
+            "business_type": case.get("business_type"),
             "provider": self.provider_code(),
         }
         headers: dict[str, str] = {"Content-Type": "application/json"}
@@ -67,12 +68,12 @@ class ThirdPartyIdentityVerifyProvider:
             raise BusinessError("Third-party identity provider is not configured") from exc
 
         provider_order_no = str(
-            data.get("provider_order_no") or data.get("order_no") or f"TP-{case.case_id}"
+            data.get("provider_order_no") or data.get("order_no") or f"TP-{case_id}"
         )
         redirect_url = data.get("redirect_url") or data.get("redirectUrl")
         provider = str(data.get("provider") or self.provider_code())
         return RealNameCaseInitResponse(
-            case_id=case.case_id,
+            case_id=case_id,
             provider=provider,
             provider_order_no=provider_order_no,
             redirect_url=str(redirect_url) if redirect_url else None,
@@ -80,16 +81,16 @@ class ThirdPartyIdentityVerifyProvider:
 
     async def handle_callback(
         self,
-        case: RealNameCase,
-        param: RealNameCaseCallbackRequest,
+        case: Mapping[str, Any],
+        param: RealNameCaseCallbackCommand,
     ) -> None:
         callback_url = (settings.profile_identity.third_party_callback_url or "").strip()
         if not callback_url:
             return None
 
         payload = {
-            "case_id": case.case_id,
-            "provider_order_no": param.provider_order_no or case.provider_order_no,
+            "case_id": case.get("case_id"),
+            "provider_order_no": param.provider_order_no or case.get("provider_order_no"),
             "success": param.success,
             "message": param.message,
         }

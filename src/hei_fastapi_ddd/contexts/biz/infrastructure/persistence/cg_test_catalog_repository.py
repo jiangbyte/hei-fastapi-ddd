@@ -1,55 +1,63 @@
-"""
-由 HEI 代码生成器生成。
-Author: Charlie
-生成时间：2026-08-08 21:09:53
-"""
+"""cg_test_catalog 仓储实现（不依赖 api Schema）。"""
 
-from sqlalchemy import Select, delete, func, select
+from __future__ import annotations
+
+from collections.abc import Mapping
+from typing import Any
+
+from sqlalchemy import Select, delete, func, inspect, select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.sql.elements import ColumnElement
 
 from hei_fastapi_ddd.contexts.biz.infrastructure.persistence.cg_test_catalog_po import (
     CgTestCatalog,
 )
-from hei_fastapi_ddd.contexts.biz.interfaces.http.cg_test_catalog_schemas import (
-    CgTestCatalogAdminPageQuery,
-    CgTestCatalogCreateRequest,
-    CgTestCatalogUpdateRequest,
-)
-from hei_fastapi_ddd.shared.exceptions.business import NotFoundError
 from hei_fastapi_ddd.shared.persistence.batch import chunked
 from hei_fastapi_ddd.shared.persistence.compat import ci_like
+from hei_fastapi_ddd.shared.security.data_scope import build_data_scope_filter
+from hei_fastapi_ddd.shared.security.session import SessionPayload
+from hei_fastapi_ddd.types.business import NotFoundError
 
 
-class CgTestCatalogRepository:
+def _row(entity: CgTestCatalog) -> dict[str, Any]:
+    mapper = inspect(entity).mapper
+    return {attr.key: getattr(entity, attr.key) for attr in mapper.column_attrs}
+
+
+class CgTestCatalogRepositoryImpl:
+    """目录仓储实现。"""
+
     def __init__(self, db: AsyncSession):
         self.db = db
 
     async def create(
         self,
-        payload: CgTestCatalogCreateRequest,
+        data: Mapping[str, Any],
         *,
         owner_dept_id: str | None = None,
-    ) -> CgTestCatalog:
-        entity = CgTestCatalog(**payload.model_dump())
+    ) -> dict[str, Any]:
+        entity = CgTestCatalog(**dict(data))
         if owner_dept_id is not None:
             entity.owner_dept_id = owner_dept_id
         self.db.add(entity)
         await self.db.flush()
-        return entity
+        return _row(entity)
 
     async def get_by_id(self, entity_id: str) -> CgTestCatalog | None:
         return await self.db.get(CgTestCatalog, entity_id)
 
-    async def get_required(self, entity_id: str) -> CgTestCatalog:
+    async def get_required(self, entity_id: str) -> dict[str, Any]:
         entity = await self.get_by_id(entity_id)
         if entity is None:
             raise NotFoundError("CgTestCatalog not found")
-        return entity
+        return _row(entity)
 
-    async def update(self, payload: CgTestCatalogUpdateRequest) -> None:
-        entity = await self.get_required(payload.id)
-        for key, value in payload.model_dump(exclude={"id"}).items():
+    async def update(self, entity_id: str, data: Mapping[str, Any]) -> None:
+        entity = await self.get_by_id(entity_id)
+        if entity is None:
+            raise NotFoundError("CgTestCatalog not found")
+        for key, value in data.items():
+            if key == "id":
+                continue
             setattr(entity, key, value)
         await self.db.flush()
 
@@ -66,29 +74,41 @@ class CgTestCatalogRepository:
 
     async def page_admin(
         self,
-        query: CgTestCatalogAdminPageQuery,
-        data_scope_filter: ColumnElement[bool] | None = None,
-    ) -> tuple[list[CgTestCatalog], int]:
+        filters: Mapping[str, Any],
+        *,
+        offset: int,
+        limit: int,
+        session: SessionPayload | None = None,
+        permission: str = "biz:cgtestcatalog:page",
+    ) -> tuple[list[dict[str, Any]], int]:
         stmt: Select[tuple[CgTestCatalog]] = select(CgTestCatalog)
         count_stmt = select(func.count(CgTestCatalog.id))
-        filters = []
-        if query.code:
-            filters.append(ci_like(CgTestCatalog.code, query.code))
-        if query.name:
-            filters.append(ci_like(CgTestCatalog.name, query.name))
-        if query.category:
-            filters.append(ci_like(CgTestCatalog.category, query.category))
-        if query.status is not None:
-            filters.append(CgTestCatalog.status == query.status)
-        if data_scope_filter is not None:
-            filters.append(data_scope_filter)
-        if filters:
-            stmt = stmt.where(*filters)
-            count_stmt = count_stmt.where(*filters)
-        stmt = stmt.order_by(CgTestCatalog.created_at.desc()).offset(query.offset).limit(query.size)
+        where = []
+        if filters.get("code"):
+            where.append(ci_like(CgTestCatalog.code, filters["code"]))
+        if filters.get("name"):
+            where.append(ci_like(CgTestCatalog.name, filters["name"]))
+        if filters.get("category"):
+            where.append(ci_like(CgTestCatalog.category, filters["category"]))
+        if filters.get("status") is not None:
+            where.append(CgTestCatalog.status == filters["status"])
+        if session is not None:
+            data_scope_filter = await build_data_scope_filter(
+                self.db,
+                session,
+                permission,
+                owner_column=CgTestCatalog.created_by,
+                dept_column=getattr(CgTestCatalog, "owner_dept_id", None),
+            )
+            if data_scope_filter is not None:
+                where.append(data_scope_filter)
+        if where:
+            stmt = stmt.where(*where)
+            count_stmt = count_stmt.where(*where)
+        stmt = stmt.order_by(CgTestCatalog.created_at.desc()).offset(offset).limit(limit)
         items = list((await self.db.execute(stmt)).scalars().all())
         total = (await self.db.execute(count_stmt)).scalar_one()
-        return items, total
+        return [_row(item) for item in items], total
 
     async def get_parent_name_map(self, parent_ids: set[str]) -> dict[str, str]:
         if not parent_ids:
@@ -105,14 +125,24 @@ class CgTestCatalogRepository:
     async def list_tree(
         self,
         keyword: str | None = None,
-        data_scope_filter: ColumnElement[bool] | None = None,
-    ) -> list[CgTestCatalog]:
+        *,
+        session: SessionPayload | None = None,
+        permission: str = "biz:cgtestcatalog:list",
+    ) -> list[dict[str, Any]]:
         stmt = select(CgTestCatalog).order_by(CgTestCatalog.id.asc())
-        filters = []
+        where = []
         if keyword:
-            filters.append(ci_like(CgTestCatalog.name, keyword))
-        if data_scope_filter is not None:
-            filters.append(data_scope_filter)
-        if filters:
-            stmt = stmt.where(*filters)
-        return list((await self.db.execute(stmt)).scalars().all())
+            where.append(ci_like(CgTestCatalog.name, keyword))
+        if session is not None:
+            data_scope_filter = await build_data_scope_filter(
+                self.db,
+                session,
+                permission,
+                owner_column=CgTestCatalog.created_by,
+                dept_column=getattr(CgTestCatalog, "owner_dept_id", None),
+            )
+            if data_scope_filter is not None:
+                where.append(data_scope_filter)
+        if where:
+            stmt = stmt.where(*where)
+        return [_row(item) for item in (await self.db.execute(stmt)).scalars().all()]

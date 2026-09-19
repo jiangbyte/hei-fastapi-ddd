@@ -1,8 +1,7 @@
 """ Author: Charlie """
 
 
-from hei_fastapi_ddd.contexts.sys.application.dict.dict_application_service import DictService
-from hei_fastapi_ddd.contexts.sys.interfaces.http.dict_schemas import (
+from hei_fastapi_ddd.contexts.sys.api.dict_schemas import (
     DictAdminPageQuery,
     DictCreateRequest,
     DictIdQuery,
@@ -10,6 +9,7 @@ from hei_fastapi_ddd.contexts.sys.interfaces.http.dict_schemas import (
     DictTreeQuery,
     DictUpdateRequest,
 )
+from hei_fastapi_ddd.contexts.sys.application.dict.dict_application_service import DictService
 from hei_fastapi_ddd.shared.config.enums import StatusEnum
 
 

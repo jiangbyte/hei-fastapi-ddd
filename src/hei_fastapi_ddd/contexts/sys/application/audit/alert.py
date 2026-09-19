@@ -6,14 +6,11 @@ import json
 import logging
 from datetime import UTC, datetime, timedelta
 
-from sqlalchemy import func, select
-
 from hei_fastapi_ddd.contexts.sys.application.audit.analyzer import AlertEvent
-from hei_fastapi_ddd.contexts.sys.infrastructure.persistence.audit_alert_po import SysAlertLog
+from hei_fastapi_ddd.contexts.sys.domain.audit.repository import AlertLogRepository
 from hei_fastapi_ddd.shared.config.reader import config_reader
 from hei_fastapi_ddd.shared.config.settings import settings
 from hei_fastapi_ddd.shared.email.sender import send_mail
-from hei_fastapi_ddd.shared.id_generator.snowflake import generate_snowflake_id
 from hei_fastapi_ddd.shared.security.safe_url import UnsafeUrlError, validate_outbound_url
 from hei_fastapi_ddd.shared.security.signature import sign_feishu
 
@@ -23,22 +20,14 @@ logger = logging.getLogger(__name__)
 class AlertDispatcher:
     """告警分发器，带冷却去重。"""
 
-    async def dispatch(self, db_session, events: list[AlertEvent]) -> None:
+    async def dispatch(self, alert_repo: AlertLogRepository, events: list[AlertEvent]) -> None:
         """过滤 + 去重 + 发送 + 记录。"""
         if not events:
             return
 
         default_cooldown = max(60, settings.audit_alert.alert_cooldown_seconds)
         rule_names = list(dict.fromkeys(event.rule_name for event in events))
-        # 取各规则最近一条告警时间，一次查询替代按事件循环 COUNT。
-        latest_rows = (
-            await db_session.execute(
-                select(SysAlertLog.rule_name, func.max(SysAlertLog.created_at))
-                .where(SysAlertLog.rule_name.in_(rule_names))
-                .group_by(SysAlertLog.rule_name)
-            )
-        ).all()
-        latest_by_rule = {str(rule): created_at for rule, created_at in latest_rows}
+        latest_by_rule = await alert_repo.latest_created_by_rules(rule_names)
         now = datetime.now(UTC)
         new_events: list[AlertEvent] = []
         for event in events:
@@ -67,17 +56,18 @@ class AlertDispatcher:
         for event in new_events:
             await self._send_alert(event)
 
-        for event in new_events:
-            db_session.add(
-                SysAlertLog(
-                    id=generate_snowflake_id(),
-                    rule_name=event.rule_name,
-                    severity=event.severity,
-                    summary=event.summary,
-                    details=event.details,
-                    notified_via=self._notify_method(),
-                )
-            )
+        await alert_repo.append_many(
+            [
+                {
+                    "rule_name": event.rule_name,
+                    "severity": event.severity,
+                    "summary": event.summary,
+                    "details": event.details,
+                    "notified_via": self._notify_method(),
+                }
+                for event in new_events
+            ]
+        )
 
     def _notify_method(self) -> str:
         """汇总当前启用的通知渠道，用于记录到告警历史。"""

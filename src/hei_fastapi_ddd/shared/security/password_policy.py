@@ -11,7 +11,7 @@ from typing import TYPE_CHECKING
 
 from hei_fastapi_ddd.shared.config.reader import config_reader
 from hei_fastapi_ddd.shared.config.settings import settings
-from hei_fastapi_ddd.shared.exceptions.business import BusinessError
+from hei_fastapi_ddd.types.business import BusinessError
 
 if TYPE_CHECKING:
     from sqlalchemy.ext.asyncio import AsyncSession

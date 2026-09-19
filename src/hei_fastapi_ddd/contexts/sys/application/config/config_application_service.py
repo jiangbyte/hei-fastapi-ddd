@@ -1,21 +1,20 @@
 """ Author: Charlie
 
-系统配置服务层：配置维护、敏感值加解密、同步发布与批量保存。
+系统配置应用服务：敏感值加解密、同步发布与批量保存。
 """
+
+from __future__ import annotations
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from hei_fastapi_ddd.contexts.sys.infrastructure.persistence.config_repository import (
-    ConfigRepository,
-)
-from hei_fastapi_ddd.contexts.sys.interfaces.http.config_schemas import (
+from hei_fastapi_ddd.contexts.sys.application.config.dto import (
     CategoryQuery,
     ConfigAdminPageQuery,
-    ConfigBatchSaveRequest,
-    ConfigCreateRequest,
-    ConfigUpdateRequest,
-    SysConfigSchema,
+    ConfigBatchSaveCommand,
+    ConfigCreateCommand,
+    ConfigUpdateCommand,
 )
+from hei_fastapi_ddd.contexts.sys.domain.config.repository import ConfigRepository
 from hei_fastapi_ddd.shared.audit import snapshots as audit_snapshots
 from hei_fastapi_ddd.shared.config.crypto import (
     decrypt_config_value,
@@ -23,103 +22,89 @@ from hei_fastapi_ddd.shared.config.crypto import (
     is_sensitive,
 )
 from hei_fastapi_ddd.shared.config.sync import reload_and_publish
-from hei_fastapi_ddd.shared.exceptions.business import BusinessError
 from hei_fastapi_ddd.shared.persistence.transaction import transactional
-from hei_fastapi_ddd.shared.schema.base import IdQuery, IdsRequest, to_schema, to_schema_list
 from hei_fastapi_ddd.shared.web.pagination import PageData, build_page
+from hei_fastapi_ddd.types.business import BusinessError
 
 
 class ConfigService:
     """系统配置服务，负责管理端配置维护。"""
 
-    def __init__(self, db: AsyncSession):
-        """绑定会话并初始化仓储。"""
+    def __init__(self, db: AsyncSession, repo: ConfigRepository):
         self.db = db
-        self.repo = ConfigRepository(db)
+        self.repo = repo
 
     async def _commit_and_reload(self, reason: str) -> None:
-        """提交当前请求事务后再重载配置，避免 savepoint 写入对外部会话不可见。"""
+        """提交当前请求事务后再重载配置。"""
         await self.db.commit()
         await reload_and_publish(reason)
 
-    async def create(self, payload: ConfigCreateRequest) -> None:
+    async def create(self, command: ConfigCreateCommand) -> None:
         """加密敏感值后创建配置并重新加载发布。"""
-        payload.config_value = encrypt_config_value(payload.config_key, payload.config_value)
+        data = command.model_dump()
+        data["config_value"] = encrypt_config_value(command.config_key, command.config_value)
         async with transactional(self.db):
-            await self.repo.create(payload)
-            entity = await self.repo.get_by_key(payload.config_key)
-            if entity is not None:
-                audit_snapshots.created_entity(entity)
+            row = await self.repo.create(data)
+            audit_snapshots.created_entity(row)
         await self._commit_and_reload("sys_config.create")
 
-    async def update(self, payload: ConfigUpdateRequest) -> None:
+    async def update(self, command: ConfigUpdateCommand) -> None:
         """校验内置配置约束，加密敏感值后更新并重新加载发布。"""
-        entity = await self.repo.get_required(payload.id)
-        audit_snapshots.before_entity(entity)
-        if entity.is_builtin and payload.scene and payload.scene != entity.scene:
+        # 1. 加载现有行与审计前快照
+        existing = await self.repo.get_required(command.id)
+        audit_snapshots.before_entity(existing)
+        if existing.get("is_builtin") and command.scene and command.scene != existing.get("scene"):
             raise BusinessError("内置配置不可修改场景编码")
-        if entity.is_builtin:
-            payload.is_builtin = True
-            payload.scene = entity.scene
-            payload.scope = entity.scope or payload.scope
-        payload.config_value = encrypt_config_value(payload.config_key, payload.config_value)
+        data = command.model_dump(exclude={"id"})
+        if existing.get("is_builtin"):
+            data["is_builtin"] = True
+            data["scene"] = existing.get("scene")
+            data["scope"] = existing.get("scope") or data.get("scope")
+        data["config_value"] = encrypt_config_value(command.config_key, command.config_value)
+        # 2. 事务内更新并写后快照
         async with transactional(self.db):
-            await self.repo.update(payload)
-            await self.db.refresh(entity)
-            audit_snapshots.after_entity(entity)
+            await self.repo.update(command.id, data)
+            updated = await self.repo.get_required(command.id)
+            audit_snapshots.after_entity(updated)
         await self._commit_and_reload("sys_config.update")
 
-    async def delete(self, payload: IdsRequest) -> None:
+    async def delete(self, ids: list[str]) -> None:
         """拒绝删除内置配置，删除后重新加载发布。"""
         async with transactional(self.db):
-            unique_ids = list(dict.fromkeys(payload.ids))
+            unique_ids = list(dict.fromkeys(ids))
             entities = await self.repo.list_by_ids(unique_ids)
-            builtin = [e.config_key for e in entities if e.is_builtin]
+            builtin = [str(e["config_key"]) for e in entities if e.get("is_builtin")]
             if builtin:
                 raise BusinessError(f"内置配置不可删除: {', '.join(builtin)}")
             audit_snapshots.deleted_all(entities)
             await self.repo.delete_many(unique_ids)
         await self._commit_and_reload("sys_config.delete")
 
-    async def detail(self, query: IdQuery) -> SysConfigSchema:
-        """查询配置详情；敏感值不回显明文，仅标记 is_set。"""
-        entity = await self.repo.get_required(query.id)
-        schema = to_schema(SysConfigSchema, entity)
-        plain = decrypt_config_value(schema.config_key, entity.config_value) or ""
-        if is_sensitive(schema.config_key):
-            schema.config_value = ""
-            if entity.config_value:
-                schema.ext_json = {**(schema.ext_json or {}), "is_set": True}
-        else:
-            schema.config_value = plain
-        return schema
+    async def detail(self, config_id: str) -> dict:
+        """查询配置详情；敏感值不回显明文。"""
+        entity = await self.repo.get_required(config_id)
+        return self._mask_row(entity)
 
-    async def list_by_category(self, query: CategoryQuery) -> list[SysConfigSchema]:
-        """按分类/作用域查询，敏感值不回显。"""
+    async def list_by_category(self, query: CategoryQuery) -> list[dict]:
+        """按分类查询，敏感值不回显。"""
         items = await self.repo.list_by_category(query.category)
-        schemas = to_schema_list(SysConfigSchema, items)
-        for entity, s in zip(items, schemas, strict=True):
-            plain = decrypt_config_value(s.config_key, entity.config_value) or ""
-            if is_sensitive(s.config_key):
-                s.config_value = ""
-                if entity.config_value:
-                    s.ext_json = {**(s.ext_json or {}), "is_set": True}
-            else:
-                s.config_value = plain
-        return schemas
+        return [self._mask_row(item) for item in items]
 
-    async def batch_save(self, payload: ConfigBatchSaveRequest) -> None:
+    async def batch_save(self, command: ConfigBatchSaveCommand) -> None:
         """批量保存配置，敏感值传空表示保留原值。"""
-        items_to_save = []
-        for item in payload.items:
+        items_to_save: list[dict] = []
+        for item in command.items:
+            payload = item.model_dump(exclude_unset=True)
             if is_sensitive(item.config_key):
                 if not item.config_value:
-                    continue  # 密码字段传空表示不修改，保留 DB 原值
-                item.config_value = encrypt_config_value(item.config_key, item.config_value)
-            items_to_save.append(item)
+                    continue
+                payload["config_value"] = encrypt_config_value(
+                    item.config_key, item.config_value
+                )
+            items_to_save.append(payload)
         if not items_to_save:
             return
-        first_key = items_to_save[0].config_key
+        first_key = str(items_to_save[0]["config_key"])
         before_entity = await self.repo.get_by_key(first_key)
         async with transactional(self.db):
             await self.repo.batch_save(items_to_save)
@@ -131,14 +116,29 @@ class ConfigService:
                 audit_snapshots.created_entity(after_entity)
         await self._commit_and_reload("sys_config.batch_save")
 
-    async def page_admin(self, query: ConfigAdminPageQuery) -> PageData[SysConfigSchema]:
+    async def page_admin(self, query: ConfigAdminPageQuery) -> PageData[dict]:
         """后台分页查询，敏感值置空。"""
-        items, total = await self.repo.page_admin(query)
-        schemas = to_schema_list(SysConfigSchema, items)
-        for schema in schemas:
-            if is_sensitive(schema.config_key):
-                schema.config_value = ""
-                entity = next(e for e in items if e.id == schema.id)
-                if entity.config_value:
-                    schema.ext_json = {**(schema.ext_json or {}), "is_set": True}
-        return build_page(query, total, schemas)
+        items, total = await self.repo.page_admin(
+            query.model_dump(exclude={"current", "size"}),
+            offset=query.offset,
+            limit=query.size,
+        )
+        records = [self._mask_row(item) for item in items]
+        return build_page(query, total, records)  # type: ignore[arg-type]
+
+    @staticmethod
+    def _mask_row(entity: dict) -> dict:
+        """敏感配置脱敏后返回行字典。"""
+        row = dict(entity)
+        config_key = str(row.get("config_key") or "")
+        stored_value = row.get("config_value")
+        plain = decrypt_config_value(config_key, stored_value) or ""
+        if is_sensitive(config_key):
+            row["config_value"] = ""
+            if stored_value:
+                ext = dict(row.get("ext_json") or {})
+                ext["is_set"] = True
+                row["ext_json"] = ext
+        else:
+            row["config_value"] = plain
+        return row

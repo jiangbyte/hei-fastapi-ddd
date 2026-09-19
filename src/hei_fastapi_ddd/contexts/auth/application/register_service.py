@@ -8,29 +8,17 @@ from __future__ import annotations
 import secrets
 from uuid import uuid4
 
+from hei_fastapi_ddd.contexts.auth.application.dto import RegisterCommand, RegisterResult
 from hei_fastapi_ddd.contexts.auth.application.base import _audit_record
 from hei_fastapi_ddd.contexts.auth.domain.policy import (
     get_register_policy,
 )
-from hei_fastapi_ddd.contexts.auth.interfaces.http.auth_schemas import (
-    RegisterRequest,
-    RegisterResponse,
-)
+
 from hei_fastapi_ddd.contexts.iam.application.account.password_helper import (
     validate_and_record_password,
 )
 from hei_fastapi_ddd.contexts.iam.domain.enums import AccountIdentityType
-from hei_fastapi_ddd.contexts.iam.interfaces.http.account_schemas import (
-    AccountCreateRequest,
-    AccountDeptAssignRequest,
-    AccountRoleAssignRequest,
-)
-from hei_fastapi_ddd.contexts.profile.infrastructure.persistence.portal_repository import (
-    ProfileUserPortalRepository,
-)
-from hei_fastapi_ddd.contexts.profile.interfaces.http.portal_schemas import (
-    ProfileUserPortalUpsertPayload,
-)
+
 from hei_fastapi_ddd.contexts.sys.application.audit.audit_application_service import (
     OperationAuditService,
 )
@@ -39,7 +27,6 @@ from hei_fastapi_ddd.shared.config.enums import AccountStatusEnum, AccountType
 from hei_fastapi_ddd.shared.config.reader import config_reader
 from hei_fastapi_ddd.shared.config.settings import settings
 from hei_fastapi_ddd.shared.email.sender import send_templated_mail
-from hei_fastapi_ddd.shared.exceptions.business import BusinessError
 from hei_fastapi_ddd.shared.persistence.transaction import transactional
 from hei_fastapi_ddd.shared.redis.keys import (
     register_otp_key,
@@ -50,6 +37,7 @@ from hei_fastapi_ddd.shared.security.account_login import (
 )
 from hei_fastapi_ddd.shared.security.password import hash_password_async
 from hei_fastapi_ddd.shared.sms.sender import send_templated_sms
+from hei_fastapi_ddd.types.business import BusinessError
 
 
 class RegisterMixin:
@@ -115,7 +103,7 @@ class RegisterMixin:
             raise BusinessError("验证码无效或已过期")
         await redis.delete(key)
 
-    async def register_portal(self, payload: RegisterRequest) -> RegisterResponse:
+    async def register_portal(self, payload: RegisterCommand) -> RegisterResult:
         """执行门户注册（ACCOUNT/EMAIL/PHONE 通道）：创建账户、资料、默认角色/部门。"""
         policy = get_register_policy(AccountType.PORTAL)
         if not policy.enabled:
@@ -168,28 +156,27 @@ class RegisterMixin:
         assert account_name
         nickname = f"user-{uuid4().hex[:8]}"
         async with transactional(self.db):
-            account_payload = AccountCreateRequest(
-                account=account_name,
-                password=payload.password,
-                account_type=AccountType.PORTAL,
-                account_status=AccountStatusEnum.ENABLED,
-                nickname=nickname,
-                email=email,
-                phone=phone,
-                email_login_enabled=bool(email),
-                phone_login_enabled=bool(phone),
-                email_identity_verified=bool(email),
-                phone_identity_verified=bool(phone),
-            )
-            account = await self.account_repo.create(
-                account_payload,
+            account = await self.account_api.create_account(
+                {
+                    "account": account_name,
+                    "password": payload.password,
+                    "account_type": AccountType.PORTAL,
+                    "account_status": AccountStatusEnum.ENABLED,
+                    "nickname": nickname,
+                    "email": email,
+                    "phone": phone,
+                    "email_login_enabled": bool(email),
+                    "phone_login_enabled": bool(phone),
+                    "email_identity_verified": bool(email),
+                    "phone_identity_verified": bool(phone),
+                },
                 password_hash=await hash_password_async(payload.password),
             )
             await validate_and_record_password(
                 self.db,
-                account.id,
+                account["id"],
                 payload.password,
-                changed_by=account.id,
+                changed_by=account["id"],
                 change_reason="register",
                 account=account,
                 account_name=account_name,
@@ -198,7 +185,7 @@ class RegisterMixin:
             )
             await ProfileUserPortalRepository(self.db).upsert(
                 ProfileUserPortalUpsertPayload(
-                    account_id=account.id,
+                    account_id=account["id"],
                     nickname=nickname,
                     phone=phone,
                     email=email,
@@ -208,7 +195,7 @@ class RegisterMixin:
                     level=None,
                 ),
             )
-            await self._assign_register_defaults(account.id, AccountType.PORTAL)
+            await self._assign_register_defaults(account["id"], AccountType.PORTAL)
         audit_snapshots.created_entity(account)
         audit_snapshots.subject(account_name)
         if email:
@@ -220,8 +207,8 @@ class RegisterMixin:
                 )
             except BusinessError:
                 pass
-        response = RegisterResponse(
-            account_id=account.id,
+        response = RegisterResult(
+            account_id=account["id"],
             account=account_name,
             account_type=AccountType.PORTAL,
         )
@@ -230,9 +217,9 @@ class RegisterMixin:
                 module="auth",
                 action="register",
                 resource_type="auth",
-                resource_id=account.id,
+                resource_id=account["id"],
                 success=True,
-                account_id=account.id,
+                account_id=account["id"],
                 account_type=AccountType.PORTAL.value,
                 operator_name=account_name,
             )
@@ -248,19 +235,3 @@ class RegisterMixin:
             return candidate
         # 极低概率碰撞：追加短熵后直接返回（一次查询收尾，避免逐序号循环）。
         return f"{candidate[:12]}{uuid4().hex[:6]}"
-
-    async def _assign_register_defaults(self, account_id: str, account_type: AccountType) -> None:
-        """为注册账户分配策略中配置的默认角色与部门。"""
-        policy = get_register_policy(account_type)
-        if policy.default_role_id:
-            await self.account_repo.assign_account_to_role(
-                AccountRoleAssignRequest(account_id=account_id, role_id=policy.default_role_id)
-            )
-        if policy.default_dept_id:
-            await self.account_repo.assign_account_to_dept(
-                AccountDeptAssignRequest(
-                    account_id=account_id,
-                    dept_id=policy.default_dept_id,
-                    is_primary=True,
-                )
-            )

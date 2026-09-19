@@ -9,20 +9,19 @@ import secrets
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from hei_fastapi_ddd.contexts.iam.application.api.account_api_adapter import (
-    AccountApiAdapter as AccountRepository,
-)
+from collections.abc import Mapping
+
+from hei_fastapi_ddd.contexts.iam.application.api.account_api import AccountApi
 from hei_fastapi_ddd.contexts.iam.domain.enums import AccountIdentityType
-from hei_fastapi_ddd.contexts.iam.infrastructure.persistence.account_po import SysAccount
 from hei_fastapi_ddd.shared.config.enums import AccountType
 from hei_fastapi_ddd.shared.config.reader import config_reader
 from hei_fastapi_ddd.shared.config.settings import settings
 from hei_fastapi_ddd.shared.email.sender import send_templated_mail
-from hei_fastapi_ddd.shared.exceptions.business import BusinessError
 from hei_fastapi_ddd.shared.redis.keys import change_password_otp_key
 from hei_fastapi_ddd.shared.redis.redis import get_redis
 from hei_fastapi_ddd.shared.security.password import verify_password_async
 from hei_fastapi_ddd.shared.sms.sender import send_templated_sms
+from hei_fastapi_ddd.types.business import BusinessError
 
 
 def change_verify_method() -> str:
@@ -33,7 +32,8 @@ def change_verify_method() -> str:
 async def send_change_password_code(
     db: AsyncSession,
     *,
-    account: SysAccount,
+    account_api: AccountApi,
+    account: Mapping[str, str],
     account_type: AccountType,
 ) -> None:
     """按配置的验证方式发送邮箱/短信验证码。"""
@@ -43,9 +43,9 @@ async def send_change_password_code(
     identity_type = (
         AccountIdentityType.EMAIL if method == "EMAIL_CODE" else AccountIdentityType.PHONE
     )
-    identities = await AccountRepository(db).list_identities_by_account_ids([account.id])
+    identities = await account_api.list_identities_by_account_ids([account["id"]])
     target = next(
-        (item.identifier for item in identities if item.identity_type == identity_type.value),
+        (item.get("identifier") for item in identities if item.get("identity_type") == identity_type.value),
         None,
     )
     if not target:
@@ -57,7 +57,7 @@ async def send_change_password_code(
     channel = "EMAIL" if method == "EMAIL_CODE" else "PHONE"
     ttl = settings.auth.password_reset_token_ttl_seconds
     await redis.setex(
-        change_password_otp_key(account_type.value, channel, account.id),
+        change_password_otp_key(account_type.value, channel, account["id"]),
         ttl,
         code,
     )
@@ -75,7 +75,7 @@ async def send_change_password_code(
 async def verify_change_password(
     db: AsyncSession,
     *,
-    account: SysAccount,
+    account: Mapping[str, str],
     account_type: AccountType,
     old_password: str | None,
     otp_code: str | None,
@@ -83,7 +83,7 @@ async def verify_change_password(
     """根据配置的验证方式校验旧密码或验证码。"""
     method = change_verify_method()
     if method == "OLD_PASSWORD":
-        if not old_password or not await verify_password_async(old_password, account.password_hash):
+        if not old_password or not await verify_password_async(old_password, account["password_hash"]):
             raise BusinessError("Old password is incorrect")
         return
     if method in {"EMAIL_CODE", "PHONE_CODE"}:
@@ -94,7 +94,7 @@ async def verify_change_password(
         if redis is None:
             raise BusinessError("Redis is required for password change verification")
         channel = "EMAIL" if method == "EMAIL_CODE" else "PHONE"
-        key = change_password_otp_key(account_type.value, channel, account.id)
+        key = change_password_otp_key(account_type.value, channel, account["id"])
         raw = await redis.get(key)
         stored = raw.decode("utf-8") if isinstance(raw, bytes) else raw
         if not stored or stored != code:

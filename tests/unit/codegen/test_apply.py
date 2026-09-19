@@ -4,12 +4,12 @@ Codegen 工作区 apply 辅助测试。
 """
 from pathlib import Path
 
+from hei_fastapi_ddd.contexts.sys.api.codegen_schemas import CodegenPreviewFile
 from hei_fastapi_ddd.contexts.sys.application.codegen.apply import (
     apply_preview_files,
     extract_export_aliases,
     merge_api_index_export,
 )
-from hei_fastapi_ddd.contexts.sys.interfaces.http.codegen_schemas import CodegenPreviewFile
 
 
 def test_merge_api_index_export_is_idempotent():

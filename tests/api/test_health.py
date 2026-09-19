@@ -8,7 +8,7 @@ from contextlib import asynccontextmanager
 import pytest
 from httpx import ASGITransport, AsyncClient
 
-from hei_fastapi_ddd.factory import create_app
+from hei_fastapi_ddd.app.factory import create_app
 
 
 @asynccontextmanager

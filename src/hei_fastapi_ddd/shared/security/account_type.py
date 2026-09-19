@@ -6,7 +6,7 @@
 from collections.abc import Iterable
 
 from hei_fastapi_ddd.shared.config.enums import AccountType
-from hei_fastapi_ddd.shared.exceptions.business import AuthorizationError
+from hei_fastapi_ddd.types.business import AuthorizationError
 
 
 def assert_account_type_allowed(

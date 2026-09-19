@@ -9,7 +9,7 @@
 ![License](https://img.shields.io/badge/License-Apache_2.0-blue)
 ![Version](https://img.shields.io/badge/version-1.1.0--beta-orange)
 
-**HEI FastAPI DDD** 是 [hei-fastapi](https://github.com/jiangbyte/hei-fastapi) 的 **DDD 重建版**：对外 API、响应信封、会话 Cookie、权限码与库表契约保持一致，对内按限界上下文 + 四层架构重组，便于长期演进与测试。
+**HEI FastAPI DDD** 是 [hei-fastapi](https://github.com/jiangbyte/hei-fastapi) 的 **DDD 重建版**：对外 API、响应信封、会话 Cookie、权限码与库表契约保持一致，对内按限界上下文 + **常见六层工程模型**组织，便于长期演进与测试。
 
 > 当前版本：`1.1.0-beta` · 协议：[Apache License 2.0](LICENSE) · 姊妹基准：[hei-fastapi](https://github.com/jiangbyte/hei-fastapi)
 
@@ -38,18 +38,18 @@ API 前缀仍为 `/api/v1/admin/*` 与 `/api/v1/portal/*`，业务能力与 `hei
 | 运维能力 | 操作审计与告警、登录日志、工作台、内置任务调度（`sys_job`） |
 | 代码生成 | 单表 / 树表 / 主子表方案，预览与 ZIP |
 | 实名认证 | 工单提交与审核、敏感字段加密 |
-| 业务扩展 | `contexts/biz` 示例限界上下文，可按同样四层横向扩展 |
+| 业务扩展 | `contexts/biz` 示例限界上下文，可按同样六层横向扩展 |
 
 ## 与 hei-fastapi 的关系
 
 | | hei-fastapi | hei-fastapi-ddd（本仓库） |
 | --- | --- | --- |
 | 对外 API / 表结构 / 种子 | 基准契约 | **保持一致**（可切换后端地址对接同一前端） |
-| 代码组织 | `app/modules/*/service` 事务脚本 | 限界上下文：`domain / application / infrastructure / interfaces` |
+| 代码组织 | `app/modules/*/service` 事务脚本 | 限界上下文内六层：`api / trigger / domain / application / infrastructure`（外加顶层 `types` / `app`） |
 | 跨模块协作 | 直连 Repository / Service | 应用端口、领域事件 / 集成事件 |
 | 仓库定位 | 现网基准实现 | **并行重建**，不原地改写 `hei-fastapi` |
 
-ASGI 入口：`hei_fastapi_ddd.main:app`（对应旧版 `app.main:app`）。
+ASGI 入口：`hei_fastapi_ddd.app.main:app`（对应旧版 `app.main:app`）。
 
 ## 前端姊妹项目
 
@@ -77,21 +77,37 @@ ASGI 入口：`hei_fastapi_ddd.main:app`（对应旧版 `app.main:app`）。
 ```text
 hei-fastapi-ddd/
 ├── src/hei_fastapi_ddd/
-│   ├── main.py / factory.py / lifespan.py / routers.py
+│   ├── app/                     # 启动层：main / factory / lifespan / routers
+│   ├── types/                   # 跨层异常类型
 │   ├── ddd_kernel/              # 聚合、事件、仓储协议等内核抽象
 │   ├── shared/                  # web / persistence / redis / security / messaging…
 │   └── contexts/                # auth | iam | sys | profile | biz
 │       └── <bc>/
+│           ├── api/             # HTTP Schema（契约 DTO）
+│           ├── trigger/http/    # FastAPI 路由
 │           ├── domain/          # 聚合、值对象、领域事件、仓储接口
-│           ├── application/     # 用例；application/api 为跨上下文端口
-│           ├── infrastructure/  # ORM PO、仓储实现、出站适配
-│           └── interfaces/http/ # FastAPI 路由与 Schema（路径契约冻结）
+│           ├── application/     # 用例编排（归属 domain 层职责）；application/api 为跨上下文端口
+│           └── infrastructure/  # ORM PO、仓储实现、出站适配
 ├── scripts/hei_fastapi.sql      # MySQL 建表 + 种子（与 hei-fastapi 同源）
 ├── migrations/                  # Alembic 增量
 └── tests/                       # domain / api / unit
 ```
 
-依赖方向（不可反向）：`interfaces → application → domain`；`infrastructure → domain`；跨上下文只依赖对方 `application.api` 或事件。
+依赖方向（严格，不可反向）：
+
+```text
+trigger → api / application
+application → domain（仓储 Protocol）／跨 BC 仅经 application.api 端口
+infrastructure → domain（实现 Protocol）
+app → trigger / infrastructure（装配）
+```
+
+- application / infrastructure **禁止** import `trigger`
+- application **禁止** import 本 BC 或他 BC 的 `infrastructure` / `api` Schema
+- infrastructure **禁止** import `api` Schema（HTTP 契约只在 trigger 边界转换）
+- 跨 BC 禁止直连对方 `infrastructure`；`shared/` 视为平台能力可依赖
+
+代码生成按六层路径产出：`api/` Schema、`trigger/http` router、`application`（DTO + Protocol 注入）、`domain` repository、`infrastructure` Impl + wiring；不再生成 `interfaces` 或 application 内 `Repository(db)`。
 
 `scripts/` 与 `migrations/`：
 
@@ -141,7 +157,7 @@ alembic upgrade head
 pip install -e ".[dev,mysql]"
 cp .env.example .env
 # 按需修改 DB__URL / REDIS__URL 等
-python -m uvicorn hei_fastapi_ddd.main:app --host 127.0.0.1 --port 8000 --reload
+python -m uvicorn hei_fastapi_ddd.app.main:app --host 127.0.0.1 --port 8000 --reload
 ```
 
 | 项 | 地址 |

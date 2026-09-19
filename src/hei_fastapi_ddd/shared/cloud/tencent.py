@@ -17,7 +17,7 @@ from tencentcloud.ses.v20201002 import ses_client
 from tencentcloud.sms.v20210111 import models as sms_models
 from tencentcloud.sms.v20210111 import sms_client
 
-from hei_fastapi_ddd.shared.exceptions.business import BusinessError
+from hei_fastapi_ddd.types.business import BusinessError
 
 
 def _make_credential(secret_id: str, secret_key: str) -> credential.Credential:

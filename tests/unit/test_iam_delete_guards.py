@@ -3,6 +3,9 @@
 import pytest
 from sqlalchemy import select
 
+from hei_fastapi_ddd.contexts.iam.api.dept_schemas import DeptUpdateRequest
+from hei_fastapi_ddd.contexts.iam.api.resource_schemas import ResourceUpdateRequest
+from hei_fastapi_ddd.contexts.iam.api.role_schemas import RoleUpdateRequest
 from hei_fastapi_ddd.contexts.iam.application.dept.dept_application_service import DeptService
 from hei_fastapi_ddd.contexts.iam.application.group.group_application_service import GroupService
 from hei_fastapi_ddd.contexts.iam.application.position.position_application_service import (
@@ -20,17 +23,14 @@ from hei_fastapi_ddd.contexts.iam.infrastructure.persistence.group_po import Sys
 from hei_fastapi_ddd.contexts.iam.infrastructure.persistence.position_po import SysPosition
 from hei_fastapi_ddd.contexts.iam.infrastructure.persistence.resource_po import SysResource
 from hei_fastapi_ddd.contexts.iam.infrastructure.persistence.role_po import SysRole
-from hei_fastapi_ddd.contexts.iam.interfaces.http.dept_schemas import DeptUpdateRequest
-from hei_fastapi_ddd.contexts.iam.interfaces.http.resource_schemas import ResourceUpdateRequest
-from hei_fastapi_ddd.contexts.iam.interfaces.http.role_schemas import RoleUpdateRequest
 from hei_fastapi_ddd.shared.config.enums import (
     AccountStatusEnum,
     AccountType,
     DataScope,
     StatusEnum,
 )
-from hei_fastapi_ddd.shared.exceptions.business import BusinessError, ConflictError
 from hei_fastapi_ddd.shared.schema.base import IdsRequest
+from hei_fastapi_ddd.types.business import BusinessError, ConflictError
 from tests.iam_relation_helpers import (
     account_dept,
     account_group,

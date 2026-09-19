@@ -10,7 +10,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from hei_fastapi_ddd.shared.config.enums import AccountStatusEnum, AccountType
 from hei_fastapi_ddd.shared.deps.db import get_db_session
-from hei_fastapi_ddd.shared.exceptions.business import AuthenticationError, AuthorizationError
 from hei_fastapi_ddd.shared.observability.context import account_id_ctx, account_type_ctx
 from hei_fastapi_ddd.shared.security.account_type import assert_account_type_allowed
 from hei_fastapi_ddd.shared.security.permission import PermissionChecker
@@ -20,6 +19,7 @@ from hei_fastapi_ddd.shared.security.permission_registry import (
 )
 from hei_fastapi_ddd.shared.security.session import SessionPayload
 from hei_fastapi_ddd.shared.security.session_auth import resolve_request_session
+from hei_fastapi_ddd.types.business import AuthenticationError, AuthorizationError
 
 
 async def get_current_session(request: Request) -> SessionPayload:

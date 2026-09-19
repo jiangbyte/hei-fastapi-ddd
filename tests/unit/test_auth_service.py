@@ -2,8 +2,8 @@
 
 import pytest
 
-from hei_fastapi_ddd.contexts.auth.application.auth_application_service import AuthService
-from hei_fastapi_ddd.contexts.auth.interfaces.http.auth_schemas import LoginPayload
+from hei_fastapi_ddd.contexts.auth.application.dto import LoginPayload
+from hei_fastapi_ddd.contexts.auth.infrastructure.wiring import build_auth_service
 from hei_fastapi_ddd.contexts.iam.domain.enums import (
     AccountIdentityType,
     GrantSubjectType,
@@ -21,8 +21,8 @@ from hei_fastapi_ddd.shared.config.enums import (
     AccountStatusEnum,
     AccountType,
 )
-from hei_fastapi_ddd.shared.exceptions.business import AuthenticationError
 from hei_fastapi_ddd.shared.security.password import hash_password
+from hei_fastapi_ddd.types.business import AuthenticationError
 from tests.iam_relation_helpers import (
     account_role,
     resource_permission,
@@ -82,7 +82,7 @@ async def test_admin_login_success(db_session):
     db_session.add(account_role(account.id, role.id))
     await db_session.commit()
 
-    payload = await AuthService(db_session).login(
+    payload = await build_auth_service(db_session).login(
         LoginPayload(account="admin", password="Admin@123456", account_type=AccountType.ADMIN)
     )
     assert payload.account_id == account.id
@@ -101,7 +101,7 @@ async def test_portal_account_cannot_login_admin_account_type(db_session):
     await db_session.commit()
 
     with pytest.raises(AuthenticationError):
-        await AuthService(db_session).login(
+        await build_auth_service(db_session).login(
             LoginPayload(
                 account="portal_account",
                 password="Portal@123456",

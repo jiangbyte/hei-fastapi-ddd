@@ -3,24 +3,18 @@
 消息通知仓储层：封装消息的增删改查、可见性过滤与阅读状态管理。
 """
 
+from collections.abc import Mapping
 from datetime import UTC, datetime
+from typing import Any
 
-from sqlalchemy import Select, and_, delete, exists, func, or_, select, update
+from sqlalchemy import Select, and_, delete, exists, func, inspect, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.sql import ColumnElement
-
 from hei_fastapi_ddd.contexts.sys.domain.notice.enums import NoticeKind, NoticeStatus, TargetScope
 from hei_fastapi_ddd.contexts.sys.infrastructure.persistence.notice_po import (
     SysNotice,
     SysNoticeRead,
 )
-from hei_fastapi_ddd.contexts.sys.interfaces.http.notice_schemas import (
-    MyNoticePageQuery,
-    SysNoticeAdminPageQuery,
-    SysNoticeCreateRequest,
-    SysNoticeUpdateRequest,
-)
-from hei_fastapi_ddd.shared.exceptions.business import NotFoundError
 from hei_fastapi_ddd.shared.id_generator.snowflake import generate_snowflake_id
 from hei_fastapi_ddd.shared.persistence.batch import chunked
 from hei_fastapi_ddd.shared.persistence.compat import (
@@ -28,6 +22,7 @@ from hei_fastapi_ddd.shared.persistence.compat import (
     json_array_contains,
     json_array_length,
 )
+from hei_fastapi_ddd.types.business import NotFoundError
 
 # 服务端维护字段：更新请求不可覆盖（对齐 hei-boot：viewCount/revokedAt/sender 由服务端维护）。
 _SERVER_FIELDS = {
@@ -81,36 +76,81 @@ def _published_filters(
     return filters
 
 
-class SysNoticeRepository:
+def _row(entity: SysNotice) -> dict[str, Any]:
+    mapper = inspect(entity).mapper
+    return {attr.key: getattr(entity, attr.key) for attr in mapper.column_attrs}
+
+
+class SysNoticeRepositoryImpl:
     """消息通知数据仓储，负责 SysNotice 与阅读记录的持久化查询。"""
 
     def __init__(self, db: AsyncSession):
         self.db = db
 
-    async def create(self, payload: SysNoticeCreateRequest) -> SysNotice:
+    async def create(self, data: Mapping[str, Any]) -> dict[str, Any]:
         """创建消息记录。"""
-        entity = SysNotice(**payload.model_dump())
+        entity = SysNotice(**dict(data))
         self.db.add(entity)
         await self.db.flush()
-        return entity
+        return _row(entity)
 
-    async def get_by_id(self, entity_id: str) -> SysNotice | None:
-        """按主键查询消息，不存在时返回 None。"""
+    async def _get_po(self, entity_id: str) -> SysNotice | None:
         return await self.db.get(SysNotice, entity_id)
 
-    async def get_required(self, entity_id: str) -> SysNotice:
+    async def get_by_id(self, entity_id: str) -> dict[str, Any] | None:
+        """按主键查询消息，不存在时返回 None。"""
+        entity = await self._get_po(entity_id)
+        return _row(entity) if entity is not None else None
+
+    async def get_required(self, entity_id: str) -> dict[str, Any]:
         """按主键查询消息，不存在时抛出 NotFoundError。"""
-        entity = await self.get_by_id(entity_id)
+        entity = await self._get_po(entity_id)
         if entity is None:
             raise NotFoundError("SysNotice not found")
-        return entity
+        return _row(entity)
 
-    async def update(self, payload: SysNoticeUpdateRequest) -> None:
-        """按载荷字段更新消息（排除服务端维护字段，对齐 hei-boot）。"""
-        entity = await self.get_required(payload.id)
-        for key, value in payload.model_dump(exclude={"id", *_SERVER_FIELDS}).items():
+    async def update(self, entity_id: str, data: Mapping[str, Any]) -> None:
+        """按字段更新消息（排除服务端维护字段）。"""
+        entity = await self._get_po(entity_id)
+        if entity is None:
+            raise NotFoundError("SysNotice not found")
+        for key, value in data.items():
+            if key in _SERVER_FIELDS or key == "id":
+                continue
             setattr(entity, key, value)
         await self.db.flush()
+
+    async def update_pin(
+        self,
+        entity_id: str,
+        *,
+        is_pinned: bool,
+        pinned_until: datetime | None,
+    ) -> dict[str, Any]:
+        """更新公告置顶状态。"""
+        entity = await self._get_po(entity_id)
+        if entity is None:
+            raise NotFoundError("SysNotice not found")
+        entity.is_pinned = is_pinned
+        entity.pinned_until = pinned_until
+        await self.db.flush()
+        return _row(entity)
+
+    async def list_read_ids(
+        self,
+        notice_ids: list[str],
+        account_type: str,
+        account_id: str,
+    ) -> set[str]:
+        """查询已读消息 ID 集合。"""
+        if not notice_ids:
+            return set()
+        stmt = select(SysNoticeRead.notice_id).where(
+            SysNoticeRead.notice_id.in_(notice_ids),
+            SysNoticeRead.account_type == account_type,
+            SysNoticeRead.account_id == account_id,
+        )
+        return set((await self.db.execute(stmt)).scalars().all())
 
     async def delete_many(self, entity_ids: list[str]) -> None:
         """批量删除消息并级联清理阅读记录（不存在的 ID 静默跳过，对齐 hei-boot 幂等语义）。"""
@@ -166,7 +206,7 @@ class SysNoticeRepository:
         entity_id: str,
         account_type: str,
         account_id: str | None = None,
-    ) -> SysNotice | None:
+    ) -> dict[str, Any] | None:
         """按 ID 查询「已发布且对指定账户可见」的消息，否则返回 None。"""
         stmt = (
             select(SysNotice)
@@ -176,47 +216,59 @@ class SysNoticeRepository:
             )
             .limit(1)
         )
-        return (await self.db.execute(stmt)).scalar_one_or_none()
+        entity = (await self.db.execute(stmt)).scalar_one_or_none()
+        return _row(entity) if entity is not None else None
 
-    async def page_admin(self, query: SysNoticeAdminPageQuery) -> tuple[list[SysNotice], int]:
+    async def page_admin(
+        self,
+        filters: Mapping[str, Any],
+        *,
+        offset: int,
+        limit: int,
+    ) -> tuple[list[dict[str, Any]], int]:
         """管理端分页查询消息，支持标题/状态/类型过滤。"""
         stmt: Select[tuple[SysNotice]] = select(SysNotice)
         count_stmt = select(func.count(SysNotice.id))
-        filters = []
-        if query.title:
-            filters.append(ci_like(SysNotice.title, query.title))
-        if query.status is not None:
-            filters.append(SysNotice.status == query.status)
-        if query.kind:
-            filters.append(SysNotice.kind == query.kind.upper())
-        if filters:
-            stmt = stmt.where(*filters)
-            count_stmt = count_stmt.where(*filters)
-        stmt = stmt.order_by(SysNotice.created_at.desc()).offset(query.offset).limit(query.size)
+        sql_filters = []
+        title = filters.get("title")
+        status = filters.get("status")
+        kind = filters.get("kind")
+        if title:
+            sql_filters.append(ci_like(SysNotice.title, str(title)))
+        if status is not None:
+            sql_filters.append(SysNotice.status == status)
+        if kind:
+            sql_filters.append(SysNotice.kind == str(kind).upper())
+        if sql_filters:
+            stmt = stmt.where(*sql_filters)
+            count_stmt = count_stmt.where(*sql_filters)
+        stmt = stmt.order_by(SysNotice.created_at.desc()).offset(offset).limit(limit)
         items = list((await self.db.execute(stmt)).scalars().all())
         total = (await self.db.execute(count_stmt)).scalar_one()
-        return items, total
+        return [_row(item) for item in items], total
 
     async def page_my(
         self,
-        query: MyNoticePageQuery,
+        filters: Mapping[str, Any],
         account_type: str,
         account_id: str | None = None,
         *,
         kind: str | None = None,
-    ) -> tuple[list[SysNotice], int, set[str]]:
+        offset: int,
+        limit: int,
+    ) -> tuple[list[dict[str, Any]], int, set[str]]:
         """分页查询对当前账户可见的消息，并返回已读 ID 集合。"""
         published = _published_filters(
             account_type=account_type,
             account_id=account_id,
-            kind=kind or query.kind,
+            kind=kind or filters.get("kind"),
         )
         stmt: Select[tuple[SysNotice]] = select(SysNotice).where(*published)
         count_stmt = select(func.count(SysNotice.id)).where(*published)
         stmt = (
             stmt.order_by(SysNotice.is_pinned.desc(), SysNotice.publish_at.desc())
-            .offset(query.offset)
-            .limit(query.size)
+            .offset(offset)
+            .limit(limit)
         )
         items = list((await self.db.execute(stmt)).scalars().all())
         total = (await self.db.execute(count_stmt)).scalar_one()
@@ -224,13 +276,8 @@ class SysNoticeRepository:
         read_id_set: set[str] = set()
         if items and account_id:
             notice_ids = [item.id for item in items]
-            read_stmt = select(SysNoticeRead.notice_id).where(
-                SysNoticeRead.notice_id.in_(notice_ids),
-                SysNoticeRead.account_type == account_type,
-                SysNoticeRead.account_id == account_id,
-            )
-            read_id_set = set((await self.db.execute(read_stmt)).scalars().all())
-        return items, total, read_id_set
+            read_id_set = await self.list_read_ids(notice_ids, account_type, account_id)
+        return [_row(item) for item in items], total, read_id_set
 
     async def count_unread(self, account_type: str, account_id: str) -> int:
         """统计当前账户可见消息中的未读数量（SQL anti-join，避免拉全量 ID）。"""

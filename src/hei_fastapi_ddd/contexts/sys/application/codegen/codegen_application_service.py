@@ -1,190 +1,181 @@
-""" Author: Charlie
+"""代码生成服务层：方案维护、数据库内省、字段同步与预览下载。"""
 
-代码生成服务层：方案维护、数据库内省、字段同步与预览下载。
-"""
+from __future__ import annotations
 
 from io import BytesIO
+from typing import Any
 from zipfile import ZIP_DEFLATED, ZipFile
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from hei_fastapi_ddd.contexts.sys.application.codegen.templates import render_files
-from hei_fastapi_ddd.contexts.sys.infrastructure.persistence.codegen_po import SysCodegenPlan
-from hei_fastapi_ddd.contexts.sys.infrastructure.persistence.codegen_repository import (
-    CodegenRepository,
-)
-from hei_fastapi_ddd.contexts.sys.interfaces.http.codegen_schemas import (
+from hei_fastapi_ddd.contexts.sys.application.codegen.dto import (
     CodegenFieldsQuery,
-    CodegenFieldsUpdateBatchRequest,
+    CodegenFieldsUpdateBatchCommand,
     CodegenFieldUpdateItem,
-    CodegenParentResourceOption,
+    CodegenIdQuery,
+    CodegenIdsCommand,
     CodegenParentResourcesQuery,
-    CodegenPlanCreateRequest,
+    CodegenPlanCreateCommand,
     CodegenPlanPageQuery,
-    CodegenPlanUpdateRequest,
-    CodegenPreviewSchema,
+    CodegenPlanUpdateCommand,
     CodegenTableColumnsQuery,
-    DatabaseColumnSchema,
-    DatabaseTableSchema,
-    SysCodegenFieldSchema,
-    SysCodegenPlanSchema,
 )
+from hei_fastapi_ddd.contexts.sys.application.codegen.templates import render_files
+from hei_fastapi_ddd.contexts.sys.domain.codegen.repository import CodegenRepository
 from hei_fastapi_ddd.shared.audit import snapshots as audit_snapshots
-from hei_fastapi_ddd.shared.exceptions.business import ConflictError
 from hei_fastapi_ddd.shared.persistence.transaction import transactional
-from hei_fastapi_ddd.shared.schema.base import IdQuery, IdsRequest, to_schema, to_schema_list
 from hei_fastapi_ddd.shared.web.pagination import PageData, build_page
+from hei_fastapi_ddd.types.business import ConflictError
 
 
 class CodegenService:
     """代码生成服务，编排方案校验、字段同步与文件渲染。"""
 
-    def __init__(self, db: AsyncSession):
-        """绑定会话并初始化仓储。"""
+    def __init__(self, db: AsyncSession, repo: CodegenRepository):
         self.db = db
-        self.repo = CodegenRepository(db)
+        self.repo = repo
 
-    async def create(self, payload: CodegenPlanCreateRequest) -> None:
+    async def create(self, command: CodegenPlanCreateCommand) -> None:
         """校验表结构后创建方案并同步反射字段。"""
-        await self._validate_plan_tables(payload)
+        await self._validate_plan_tables(command)
         async with transactional(self.db):
-            plan = await self.repo.create(payload)
+            plan = await self.repo.create(command.model_dump(exclude_none=True))
             await self._sync_reflected_fields(plan)
             audit_snapshots.created_entity(plan)
 
-    async def update(self, payload: CodegenPlanUpdateRequest) -> None:
+    async def update(self, command: CodegenPlanUpdateCommand) -> None:
         """校验表结构后更新方案并重新同步反射字段。"""
-        await self._validate_plan_tables(payload)
-        entity = await self.repo.get_required(payload.id)
-        audit_snapshots.before_entity(entity)
+        await self._validate_plan_tables(command)
+        before = await self.repo.get_required(command.id)
+        audit_snapshots.before_entity(before)
         async with transactional(self.db):
-            await self.repo.update(payload)
-            plan = await self.repo.get_required(payload.id)
+            await self.repo.update(
+                command.id, command.model_dump(exclude={"id"}, exclude_none=True)
+            )
+            plan = await self.repo.get_required(command.id)
             await self._sync_reflected_fields(plan)
             audit_snapshots.after_entity(plan)
 
-    async def delete(self, payload: IdsRequest) -> None:
+    async def delete(self, command: CodegenIdsCommand) -> None:
         """事务内批量删除方案。"""
-        unique_ids = list(dict.fromkeys(payload.ids))
+        unique_ids = list(dict.fromkeys(command.ids))
         entities = [
-            entity
+            row
             for entity_id in unique_ids
-            if (entity := await self.repo.get_by_id(entity_id)) is not None
+            if (row := await self.repo.get_by_id(entity_id)) is not None
         ]
         async with transactional(self.db):
             audit_snapshots.deleted_all(entities)
             await self.repo.delete_many(unique_ids)
 
-    async def detail(self, query: IdQuery) -> SysCodegenPlanSchema:
+    async def detail(self, query: CodegenIdQuery) -> dict[str, Any]:
         """查询方案详情。"""
-        return to_schema(SysCodegenPlanSchema, await self.repo.get_required(query.id))
+        return await self.repo.get_required(query.id)
 
-    async def page_admin(self, query: CodegenPlanPageQuery) -> PageData[SysCodegenPlanSchema]:
+    async def page_admin(self, query: CodegenPlanPageQuery) -> PageData[dict[str, Any]]:
         """分页查询方案。"""
-        items, total = await self.repo.page_admin(query)
-        return build_page(query, total, to_schema_list(SysCodegenPlanSchema, items))
+        filters = query.model_dump(exclude={"page", "size", "offset"})
+        items, total = await self.repo.page_admin(
+            filters, offset=query.offset, limit=query.size
+        )
+        return build_page(query, total, items)
 
-    async def tables(self) -> list[DatabaseTableSchema]:
+    async def tables(self) -> list[dict[str, str | None]]:
         """列出可生成的数据库表。"""
-        return [DatabaseTableSchema(**item) for item in await self.repo.list_database_tables()]
+        return await self.repo.list_database_tables()
 
-    async def table_columns(self, query: CodegenTableColumnsQuery) -> list[DatabaseColumnSchema]:
+    async def table_columns(self, query: CodegenTableColumnsQuery) -> list[dict[str, Any]]:
         """查询指定表的列元数据。"""
         return [
-            DatabaseColumnSchema(**_column_schema_data(item))
+            _column_view(item)
             for item in await self.repo.list_database_columns(query.table_name)
         ]
 
-    async def fields(self, query: CodegenFieldsQuery) -> list[SysCodegenFieldSchema]:
+    async def fields(self, query: CodegenFieldsQuery) -> list[dict[str, Any]]:
         """查询方案的字段配置。"""
-        return to_schema_list(
-            SysCodegenFieldSchema, await self.repo.list_fields(query.plan_id, query.table_role)
-        )
+        return await self.repo.list_fields(query.plan_id, query.table_role)
 
-    async def update_fields_batch(self, payload: CodegenFieldsUpdateBatchRequest) -> None:
+    async def update_fields_batch(self, command: CodegenFieldsUpdateBatchCommand) -> None:
         """事务内整体替换方案的字段配置。"""
-        plan = await self.repo.get_required(payload.plan_id)
-        audit_snapshots.before_entity(plan)
+        before = await self.repo.get_required(command.plan_id)
+        audit_snapshots.before_entity(before)
+        field_rows = [f.model_dump(exclude={"id"}) for f in command.fields]
         async with transactional(self.db):
-            await self.repo.replace_fields(payload.plan_id, payload.fields)
-            await self.db.refresh(plan)
-            audit_snapshots.after_entity(plan)
+            await self.repo.replace_fields(command.plan_id, field_rows)
+            after = await self.repo.get_required(command.plan_id)
+            audit_snapshots.after_entity(after)
 
     async def parent_resources(
         self, query: CodegenParentResourcesQuery
-    ) -> list[CodegenParentResourceOption]:
+    ) -> list[dict[str, Any]]:
         """查询可作为父资源的资源选项树。"""
         return _build_resource_options(await self.repo.list_resource_options(query.module_id))
 
-    async def preview(self, query: IdQuery) -> CodegenPreviewSchema:
-        """渲染方案的文件预览。
-
-        主表无字段，或关联类型（LEFT_TREE_TABLE/MASTER_DETAIL）子表无字段时，
-        先反射同步（对齐 hei-boot preview 的补全逻辑）。
-        """
+    async def preview(self, query: CodegenIdQuery) -> dict[str, Any]:
+        """渲染方案的文件预览。"""
         plan = await self.repo.get_required(query.id)
-        main_fields = await self.repo.list_fields(plan.id, "MAIN")
-        sub_fields = await self.repo.list_fields(plan.id, "SUB")
+        main_fields = await self.repo.list_fields(plan["id"], "MAIN")
+        sub_fields = await self.repo.list_fields(plan["id"], "SUB")
         needs_sync = not main_fields or (
-            plan.gen_type in {"LEFT_TREE_TABLE", "MASTER_DETAIL"} and not sub_fields
+            plan.get("gen_type") in {"LEFT_TREE_TABLE", "MASTER_DETAIL"} and not sub_fields
         )
         if needs_sync:
             await self._sync_reflected_fields(plan)
-            main_fields = await self.repo.list_fields(plan.id, "MAIN")
-            sub_fields = await self.repo.list_fields(plan.id, "SUB")
-        return CodegenPreviewSchema(files=render_files(plan, main_fields, sub_fields))
+            main_fields = await self.repo.list_fields(plan["id"], "MAIN")
+            sub_fields = await self.repo.list_fields(plan["id"], "SUB")
+        files = render_files(plan, main_fields, sub_fields)
+        return {"files": files}
 
-    async def download(self, query: IdQuery) -> tuple[bytes, str]:
-        """将预览文件打包为 zip 返回内容与文件名。"""
+    async def download(self, query: CodegenIdQuery) -> tuple[bytes, str]:
+        """将预览文件打包为 zip。"""
         preview = await self.preview(query)
         buffer = BytesIO()
         with ZipFile(buffer, "w", ZIP_DEFLATED) as zip_file:
-            for file in preview.files:
+            for file in preview["files"]:
                 zip_file.writestr(file.path, file.content)
         return buffer.getvalue(), f"codegen-{query.id}.zip"
 
     async def _validate_plan_tables(
-        self, payload: CodegenPlanCreateRequest | CodegenPlanUpdateRequest
+        self, command: CodegenPlanCreateCommand | CodegenPlanUpdateCommand
     ) -> None:
         """校验方案引用的主表/子表与主键/外键字段确实存在。"""
-        main_columns = await self.repo.list_database_columns(payload.table_name)
+        main_columns = await self.repo.list_database_columns(command.table_name)
         main_column_names = {column["column_name"] for column in main_columns}
-        if payload.pk_column not in main_column_names:
+        if command.pk_column not in main_column_names:
             raise ConflictError("Main primary key field does not exist")
-        if payload.gen_type in {"TREE", "LEFT_TREE_TABLE"}:
-            if payload.tree_parent_field not in main_column_names:
+        if command.gen_type in {"TREE", "LEFT_TREE_TABLE"}:
+            if command.tree_parent_field not in main_column_names:
                 raise ConflictError("Tree parent field does not exist")
-            if payload.tree_label_field not in main_column_names:
+            if command.tree_label_field not in main_column_names:
                 raise ConflictError("Tree label field does not exist")
-        if payload.gen_type in {"LEFT_TREE_TABLE", "MASTER_DETAIL"}:
-            if not payload.sub_table or not payload.sub_pk or not payload.sub_foreign_key:
+        if command.gen_type in {"LEFT_TREE_TABLE", "MASTER_DETAIL"}:
+            if not command.sub_table or not command.sub_pk or not command.sub_foreign_key:
                 raise ConflictError("Sub table configuration is incomplete")
-            sub_columns = await self.repo.list_database_columns(payload.sub_table)
+            sub_columns = await self.repo.list_database_columns(command.sub_table)
             sub_column_names = {column["column_name"] for column in sub_columns}
-            if payload.sub_pk not in sub_column_names:
+            if command.sub_pk not in sub_column_names:
                 raise ConflictError("Sub primary key field does not exist")
-            if payload.sub_foreign_key not in sub_column_names:
+            if command.sub_foreign_key not in sub_column_names:
                 raise ConflictError("Sub foreign key field does not exist")
 
-    async def _sync_reflected_fields(self, plan: SysCodegenPlan) -> None:
+    async def _sync_reflected_fields(self, plan: dict[str, Any]) -> None:
         """反射主表（及子表）列并合并写入字段配置。"""
-        main_columns = await self.repo.list_database_columns(plan.table_name)
+        main_columns = await self.repo.list_database_columns(str(plan["table_name"]))
         await self.repo.upsert_reflected_fields(
-            plan.id,
+            str(plan["id"]),
             "MAIN",
-            [_default_field(item, "MAIN") for item in main_columns],
+            [_default_field(item, "MAIN").model_dump() for item in main_columns],
         )
-        if plan.gen_type in {"LEFT_TREE_TABLE", "MASTER_DETAIL"} and plan.sub_table:
-            sub_columns = await self.repo.list_database_columns(plan.sub_table)
+        if plan.get("gen_type") in {"LEFT_TREE_TABLE", "MASTER_DETAIL"} and plan.get("sub_table"):
+            sub_columns = await self.repo.list_database_columns(str(plan["sub_table"]))
             await self.repo.upsert_reflected_fields(
-                plan.id,
+                str(plan["id"]),
                 "SUB",
-                [_default_field(item, "SUB") for item in sub_columns],
+                [_default_field(item, "SUB").model_dump() for item in sub_columns],
             )
 
 
-def _column_schema_data(column: dict) -> dict:
-    """从内省列元数据提取响应所需字段。"""
+def _column_view(column: dict[str, Any]) -> dict[str, Any]:
     return {
         "column_name": column["column_name"],
         "label": column.get("column_comment"),
@@ -197,8 +188,7 @@ def _column_schema_data(column: dict) -> dict:
     }
 
 
-def _default_field(column: dict, table_role: str) -> CodegenFieldUpdateItem:
-    """根据内省列构造默认字段配置。"""
+def _default_field(column: dict[str, Any], table_role: str) -> CodegenFieldUpdateItem:
     column_name = column["column_name"]
     is_pk = bool(column["is_primary_key"])
     is_audit = column_name in {"created_at", "created_by", "updated_at", "updated_by"}
@@ -229,7 +219,6 @@ def _default_field(column: dict, table_role: str) -> CodegenFieldUpdateItem:
 
 
 def _default_widget(column_name: str, python_type: str) -> str:
-    """按列名与类型推断默认表单控件。"""
     if column_name == "status":
         return "dict"
     if python_type in {"int", "float"}:
@@ -242,7 +231,6 @@ def _default_widget(column_name: str, python_type: str) -> str:
 
 
 def _default_query_operator(column_name: str, python_type: str) -> str | None:
-    """按列名与类型推断默认查询方式。"""
     if column_name == "status" or python_type in {"int", "bool"}:
         return "EQ"
     if column_name in {"name", "title", "code", "category", "type"}:
@@ -250,31 +238,29 @@ def _default_query_operator(column_name: str, python_type: str) -> str | None:
     return None
 
 
-def _build_resource_options(resources) -> list[CodegenParentResourceOption]:
-    """将资源列表构建为父子树形选项（对齐 hei-boot parentResources）。"""
-    ids = {item.id for item in resources}
-    node_map = {
-        item.id: CodegenParentResourceOption(
-            id=item.id,
-            parent_id=item.parent_id,
-            name=item.name,
-            resource_type=item.resource_type,
-            module_id=item.module_id,
-            sort=getattr(item, "sort", None),
-            weight=getattr(item, "sort", None) or 0,
-            children=None,
-        )
-        for item in resources
-    }
-    roots: list[CodegenParentResourceOption] = []
+def _build_resource_options(resources: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    ids = {item["id"] for item in resources}
+    node_map: dict[str, dict[str, Any]] = {}
     for item in resources:
-        node = node_map[item.id]
-        parent_id = item.parent_id
+        node_map[item["id"]] = {
+            "id": item["id"],
+            "parent_id": item.get("parent_id"),
+            "name": item["name"],
+            "resource_type": item["resource_type"],
+            "module_id": item.get("module_id"),
+            "sort": item.get("sort"),
+            "weight": item.get("sort") or 0,
+            "children": None,
+        }
+    roots: list[dict[str, Any]] = []
+    for item in resources:
+        node = node_map[item["id"]]
+        parent_id = item.get("parent_id")
         if parent_id and parent_id in ids:
             parent = node_map[parent_id]
-            if parent.children is None:
-                parent.children = []
-            parent.children.append(node)
+            if parent["children"] is None:
+                parent["children"] = []
+            parent["children"].append(node)
         else:
             roots.append(node)
     return roots

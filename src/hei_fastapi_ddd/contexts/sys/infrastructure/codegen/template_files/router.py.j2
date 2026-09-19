@@ -1,0 +1,280 @@
+{# Author: Charlie #}
+"""
+由 HEI 代码生成器生成（trigger：Schema ↔ Command，经 wiring 注入）。
+Author: {{ plan.author }}
+生成时间：{{ ctx.generated_at }}
+"""
+
+from typing import Annotated
+
+from fastapi import APIRouter, Depends
+
+from hei_fastapi_ddd.contexts.biz.api.{{ main.entity_name | snake }}_schemas import (
+    {{ main.entity_name }}AdminPageQuery,
+    {{ main.entity_name }}CreateRequest,
+    {{ main.entity_name }}Schema,
+{% if has_tree %}
+    {{ main.entity_name }}TreeNode,
+{% endif %}
+    {{ main.entity_name }}UpdateRequest,
+{% if has_sub and sub %}
+    {{ sub.entity_name }}AdminPageQuery,
+    {{ sub.entity_name }}CreateRequest,
+    {{ sub.entity_name }}Schema,
+    {{ sub.entity_name }}UpdateRequest,
+{% endif %}
+)
+from hei_fastapi_ddd.contexts.biz.application.{{ main.entity_name | snake }}.{{ main.entity_name | snake }}_application_service import (
+    {{ main.entity_name }}Service,
+{% if has_sub and sub %}
+    {{ sub.entity_name }}Service,
+{% endif %}
+)
+from hei_fastapi_ddd.contexts.biz.application.{{ main.entity_name | snake }}.dto import (
+    {{ main.entity_name }}CreateCommand,
+    {{ main.entity_name }}PageQuery,
+    {{ main.entity_name }}UpdateCommand,
+{% if has_tree %}
+    {{ main.entity_name }}KeywordQuery,
+{% endif %}
+{% if has_sub and sub %}
+    {{ sub.entity_name }}CreateCommand,
+    {{ sub.entity_name }}PageQuery,
+    {{ sub.entity_name }}UpdateCommand,
+{% endif %}
+)
+from hei_fastapi_ddd.contexts.biz.infrastructure.wiring import (
+    get_{{ main.entity_name | snake }}_service,
+{% if has_sub and sub %}
+    get_{{ sub.entity_name | snake }}_service,
+{% endif %}
+)
+from hei_fastapi_ddd.shared.config.enums import AccountType
+from hei_fastapi_ddd.shared.deps.auth import (
+    get_current_session,
+    require_account_type,
+    require_permission,
+)
+from hei_fastapi_ddd.shared.schema.base import (
+    IdQuery,
+    IdsRequest,
+{% if has_tree %}
+    KeywordQuery,
+{% endif %}
+)
+from hei_fastapi_ddd.shared.security.session import SessionPayload
+from hei_fastapi_ddd.shared.web.pagination import PageData
+from hei_fastapi_ddd.shared.web.schema import ApiResponse, success
+
+router = APIRouter()
+{% set api_base = "/v1/admin" ~ plan.api_prefix.rstrip("/") %}
+
+
+@router.post(
+    "{{ api_base }}/create",
+    dependencies=[
+        Depends(require_account_type(AccountType.ADMIN)),
+        Depends(require_permission("{{ permission_prefix }}:create")),
+    ],
+    response_model=ApiResponse[None],
+)
+async def create(
+    payload: {{ main.entity_name }}CreateRequest,
+    service: Annotated[{{ main.entity_name }}Service, Depends(get_{{ main.entity_name | snake }}_service)],
+    session: Annotated[SessionPayload, Depends(get_current_session)],
+) -> ApiResponse[None]:
+    await service.create(
+        {{ main.entity_name }}CreateCommand.model_validate(payload.model_dump()),
+        session=session,
+    )
+    return success()
+
+
+@router.post(
+    "{{ api_base }}/update",
+    dependencies=[
+        Depends(require_account_type(AccountType.ADMIN)),
+        Depends(require_permission("{{ permission_prefix }}:update")),
+    ],
+    response_model=ApiResponse[None],
+)
+async def update(
+    payload: {{ main.entity_name }}UpdateRequest,
+    service: Annotated[{{ main.entity_name }}Service, Depends(get_{{ main.entity_name | snake }}_service)],
+) -> ApiResponse[None]:
+    await service.update({{ main.entity_name }}UpdateCommand.model_validate(payload.model_dump()))
+    return success()
+
+
+@router.post(
+    "{{ api_base }}/delete",
+    dependencies=[
+        Depends(require_account_type(AccountType.ADMIN)),
+        Depends(require_permission("{{ permission_prefix }}:delete")),
+    ],
+    response_model=ApiResponse[None],
+)
+async def delete(
+    payload: IdsRequest,
+    service: Annotated[{{ main.entity_name }}Service, Depends(get_{{ main.entity_name | snake }}_service)],
+) -> ApiResponse[None]:
+    await service.delete(payload.ids)
+    return success()
+
+
+@router.get(
+    "{{ api_base }}/detail",
+    dependencies=[
+        Depends(require_account_type(AccountType.ADMIN)),
+        Depends(require_permission("{{ permission_prefix }}:detail")),
+    ],
+    response_model=ApiResponse[{{ main.entity_name }}Schema],
+)
+async def detail(
+    query: Annotated[IdQuery, Depends()],
+    service: Annotated[{{ main.entity_name }}Service, Depends(get_{{ main.entity_name | snake }}_service)],
+) -> ApiResponse[{{ main.entity_name }}Schema]:
+    return success({{ main.entity_name }}Schema.model_validate(await service.detail(query.id)))
+
+
+@router.get(
+    "{{ api_base }}/page",
+    dependencies=[
+        Depends(require_account_type(AccountType.ADMIN)),
+        Depends(require_permission("{{ permission_prefix }}:page")),
+    ],
+    response_model=ApiResponse[PageData[{{ main.entity_name }}Schema]],
+)
+async def page(
+    query: Annotated[{{ main.entity_name }}AdminPageQuery, Depends()],
+    service: Annotated[{{ main.entity_name }}Service, Depends(get_{{ main.entity_name | snake }}_service)],
+    session: Annotated[SessionPayload, Depends(get_current_session)],
+) -> ApiResponse[PageData[{{ main.entity_name }}Schema]]:
+    page_data = await service.page_admin(
+        {{ main.entity_name }}PageQuery.model_validate(query.model_dump()),
+        session,
+    )
+    records = [{{ main.entity_name }}Schema.model_validate(row) for row in page_data.records]
+    return success(
+        PageData(
+            size=page_data.size,
+            current=page_data.current,
+            total=page_data.total,
+            pages=page_data.pages,
+            records=records,
+        )
+    )
+{% if has_tree %}
+
+
+@router.get(
+    "{{ api_base }}/tree",
+    dependencies=[
+        Depends(require_account_type(AccountType.ADMIN)),
+        Depends(require_permission("{{ permission_prefix }}:list")),
+    ],
+    response_model=ApiResponse[list[{{ main.entity_name }}TreeNode]],
+)
+async def tree(
+    query: Annotated[KeywordQuery, Depends()],
+    service: Annotated[{{ main.entity_name }}Service, Depends(get_{{ main.entity_name | snake }}_service)],
+    session: Annotated[SessionPayload, Depends(get_current_session)],
+) -> ApiResponse[list[{{ main.entity_name }}TreeNode]]:
+    nodes = await service.tree(
+        {{ main.entity_name }}KeywordQuery(keyword=query.keyword),
+        session,
+    )
+    return success([{{ main.entity_name }}TreeNode.model_validate(n) for n in nodes])
+{% endif %}
+{% if has_sub and sub %}
+
+
+@router.post(
+    "{{ api_base }}/children/create",
+    dependencies=[
+        Depends(require_account_type(AccountType.ADMIN)),
+        Depends(require_permission("{{ permission_prefix }}:create")),
+    ],
+    response_model=ApiResponse[None],
+)
+async def create_child(
+    payload: {{ sub.entity_name }}CreateRequest,
+    service: Annotated[{{ sub.entity_name }}Service, Depends(get_{{ sub.entity_name | snake }}_service)],
+) -> ApiResponse[None]:
+    await service.create({{ sub.entity_name }}CreateCommand.model_validate(payload.model_dump()))
+    return success()
+
+
+@router.post(
+    "{{ api_base }}/children/update",
+    dependencies=[
+        Depends(require_account_type(AccountType.ADMIN)),
+        Depends(require_permission("{{ permission_prefix }}:update")),
+    ],
+    response_model=ApiResponse[None],
+)
+async def update_child(
+    payload: {{ sub.entity_name }}UpdateRequest,
+    service: Annotated[{{ sub.entity_name }}Service, Depends(get_{{ sub.entity_name | snake }}_service)],
+) -> ApiResponse[None]:
+    await service.update({{ sub.entity_name }}UpdateCommand.model_validate(payload.model_dump()))
+    return success()
+
+
+@router.post(
+    "{{ api_base }}/children/delete",
+    dependencies=[
+        Depends(require_account_type(AccountType.ADMIN)),
+        Depends(require_permission("{{ permission_prefix }}:delete")),
+    ],
+    response_model=ApiResponse[None],
+)
+async def delete_child(
+    payload: IdsRequest,
+    service: Annotated[{{ sub.entity_name }}Service, Depends(get_{{ sub.entity_name | snake }}_service)],
+) -> ApiResponse[None]:
+    await service.delete(payload.ids)
+    return success()
+
+
+@router.get(
+    "{{ api_base }}/children/detail",
+    dependencies=[
+        Depends(require_account_type(AccountType.ADMIN)),
+        Depends(require_permission("{{ permission_prefix }}:detail")),
+    ],
+    response_model=ApiResponse[{{ sub.entity_name }}Schema],
+)
+async def child_detail(
+    query: Annotated[IdQuery, Depends()],
+    service: Annotated[{{ sub.entity_name }}Service, Depends(get_{{ sub.entity_name | snake }}_service)],
+) -> ApiResponse[{{ sub.entity_name }}Schema]:
+    return success({{ sub.entity_name }}Schema.model_validate(await service.detail(query.id)))
+
+
+@router.get(
+    "{{ api_base }}/children/page",
+    dependencies=[
+        Depends(require_account_type(AccountType.ADMIN)),
+        Depends(require_permission("{{ permission_prefix }}:page")),
+    ],
+    response_model=ApiResponse[PageData[{{ sub.entity_name }}Schema]],
+)
+async def child_page(
+    query: Annotated[{{ sub.entity_name }}AdminPageQuery, Depends()],
+    service: Annotated[{{ sub.entity_name }}Service, Depends(get_{{ sub.entity_name | snake }}_service)],
+) -> ApiResponse[PageData[{{ sub.entity_name }}Schema]]:
+    page_data = await service.page_admin(
+        {{ sub.entity_name }}PageQuery.model_validate(query.model_dump())
+    )
+    records = [{{ sub.entity_name }}Schema.model_validate(row) for row in page_data.records]
+    return success(
+        PageData(
+            size=page_data.size,
+            current=page_data.current,
+            total=page_data.total,
+            pages=page_data.pages,
+            records=records,
+        )
+    )
+{% endif %}

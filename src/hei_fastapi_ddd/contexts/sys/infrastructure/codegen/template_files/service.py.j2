@@ -1,0 +1,146 @@
+{# Author: Charlie #}
+"""
+由 HEI 代码生成器生成（application：注入 domain Protocol，不依赖 infrastructure / api）。
+Author: {{ plan.author }}
+生成时间：{{ ctx.generated_at }}
+"""
+
+from __future__ import annotations
+
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from hei_fastapi_ddd.contexts.biz.application.{{ main.entity_name | snake }}.dto import (
+    {{ main.entity_name }}CreateCommand,
+    {{ main.entity_name }}PageQuery,
+    {{ main.entity_name }}UpdateCommand,
+{% if has_tree %}
+    {{ main.entity_name }}KeywordQuery,
+{% endif %}
+{% if has_sub and sub %}
+    {{ sub.entity_name }}CreateCommand,
+    {{ sub.entity_name }}PageQuery,
+    {{ sub.entity_name }}UpdateCommand,
+{% endif %}
+)
+from hei_fastapi_ddd.contexts.biz.domain.{{ main.entity_name | snake }}.repository import (
+    {{ main.entity_name }}Repository,
+{% if has_sub and sub %}
+    {{ sub.entity_name }}Repository,
+{% endif %}
+)
+from hei_fastapi_ddd.shared.audit import snapshots as audit_snapshots
+from hei_fastapi_ddd.shared.persistence.transaction import transactional
+from hei_fastapi_ddd.shared.security.data_scope import default_owner_dept_id
+from hei_fastapi_ddd.shared.security.session import SessionPayload
+from hei_fastapi_ddd.shared.web.pagination import PageData, build_page
+
+
+class {{ main.entity_name }}Service:
+    """{{ main.entity_name }} 用例编排。"""
+
+    def __init__(self, db: AsyncSession, repo: {{ main.entity_name }}Repository):
+        self.db = db
+        self.repo = repo
+
+    async def create(
+        self,
+        command: {{ main.entity_name }}CreateCommand,
+        session: SessionPayload | None = None,
+    ) -> None:
+        # 1. 事务内写入
+        # 2. 审计快照
+        async with transactional(self.db):
+            entity = await self.repo.create(
+                command.model_dump(),
+                owner_dept_id=default_owner_dept_id(session),
+            )
+        audit_snapshots.created_entity(entity)
+
+    async def update(self, command: {{ main.entity_name }}UpdateCommand) -> None:
+        existing = await self.repo.get_required(command.{{ main.pk_name }})
+        audit_snapshots.before_entity(existing)
+        async with transactional(self.db):
+            await self.repo.update(
+                command.{{ main.pk_name }},
+                command.model_dump(exclude={"{{ main.pk_name }}"}),
+            )
+            updated = await self.repo.get_required(command.{{ main.pk_name }})
+        audit_snapshots.after_entity(updated)
+
+    async def delete(self, ids: list[str]) -> None:
+        unique_ids = list(dict.fromkeys(ids))
+        if not unique_ids:
+            return
+        entities = [await self.repo.get_required(entity_id) for entity_id in unique_ids]
+        audit_snapshots.deleted_all(entities)
+        async with transactional(self.db):
+            await self.repo.delete_many(unique_ids)
+
+    async def detail(self, entity_id: str) -> dict:
+        return await self.repo.get_required(entity_id)
+
+    async def page_admin(
+        self,
+        query: {{ main.entity_name }}PageQuery,
+        session: SessionPayload | None = None,
+    ) -> PageData[dict]:
+        items, total = await self.repo.page_admin(
+            query.model_dump(exclude={"current", "size"}),
+            offset=query.offset,
+            limit=query.size,
+            session=session,
+        )
+        return build_page(query, total, items)  # type: ignore[arg-type]
+{% if has_tree %}
+
+    async def tree(
+        self,
+        query: {{ main.entity_name }}KeywordQuery,
+        session: SessionPayload | None = None,
+    ) -> list[dict]:
+        return await self.repo.list_tree(query.keyword, session=session)
+{% endif %}
+{% if has_sub and sub %}
+
+
+class {{ sub.entity_name }}Service:
+    def __init__(self, db: AsyncSession, repo: {{ sub.entity_name }}Repository):
+        self.db = db
+        self.repo = repo
+
+    async def create(self, command: {{ sub.entity_name }}CreateCommand) -> None:
+        async with transactional(self.db):
+            entity = await self.repo.create(command.model_dump())
+        audit_snapshots.created_entity(entity)
+
+    async def update(self, command: {{ sub.entity_name }}UpdateCommand) -> None:
+        existing = await self.repo.get_required(command.{{ sub.pk_name }})
+        audit_snapshots.before_entity(existing)
+        async with transactional(self.db):
+            await self.repo.update(
+                command.{{ sub.pk_name }},
+                command.model_dump(exclude={"{{ sub.pk_name }}"}),
+            )
+            updated = await self.repo.get_required(command.{{ sub.pk_name }})
+        audit_snapshots.after_entity(updated)
+
+    async def delete(self, ids: list[str]) -> None:
+        unique_ids = list(dict.fromkeys(ids))
+        if not unique_ids:
+            return
+        entities = [await self.repo.get_required(entity_id) for entity_id in unique_ids]
+        audit_snapshots.deleted_all(entities)
+        async with transactional(self.db):
+            await self.repo.delete_many(unique_ids)
+
+    async def detail(self, entity_id: str) -> dict:
+        return await self.repo.get_required(entity_id)
+
+    async def page_admin(self, query: {{ sub.entity_name }}PageQuery) -> PageData[dict]:
+        items, total = await self.repo.page_admin(
+            query.model_dump(exclude={"current", "size"}),
+            offset=query.offset,
+            limit=query.size,
+        )
+        return build_page(query, total, items)  # type: ignore[arg-type]
+{% endif %}

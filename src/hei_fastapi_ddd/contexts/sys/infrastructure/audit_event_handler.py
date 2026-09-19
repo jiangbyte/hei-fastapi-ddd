@@ -5,7 +5,14 @@
 import logging
 
 from hei_fastapi_ddd.contexts.profile.application.utils.profile import get_profile
+from hei_fastapi_ddd.contexts.profile.infrastructure.api.profile_read_adapter import (
+    get_profile_read_port,
+)
 from hei_fastapi_ddd.contexts.sys.application.audit.support import resolve_account_login
+from hei_fastapi_ddd.contexts.sys.infrastructure.read.account_identity_read_adapter import (
+    AccountIdentityReadAdapter,
+)
+from hei_fastapi_ddd.contexts.sys.infrastructure.wiring import build_audit_service
 from hei_fastapi_ddd.contexts.sys.infrastructure.audit_labels import (
     action_name,
     build_content,
@@ -35,9 +42,11 @@ async def _resolve_operator_name(account_id: str | None, account_type: str | Non
         return None
     try:
         async with get_session_factory()() as session:
-            profile = await get_profile(session, account_type or "admin", account_id)
+            profile = await get_profile(
+                get_profile_read_port(session), account_type or "admin", account_id
+            )
             if profile is not None:
-                nickname = str(getattr(profile, "nickname", "") or "").strip()
+                nickname = str(profile.get("nickname") or "").strip()
                 if nickname:
                     return nickname
     except Exception:
@@ -51,7 +60,9 @@ async def _resolve_subject(event: OperationAuditEvent, operator_name: str | None
     if event.account_id:
         try:
             async with get_session_factory()() as session:
-                login = await resolve_account_login(session, event.account_id)
+                login = await resolve_account_login(
+                    AccountIdentityReadAdapter(session), event.account_id
+                )
                 if login:
                     return login
         except Exception:
@@ -61,10 +72,6 @@ async def _resolve_subject(event: OperationAuditEvent, operator_name: str | None
 
 async def _persist_audit_event(event: OperationAuditEvent) -> None:
     """将收到的审计事件写入 sys_operation_audit 表。"""
-    from hei_fastapi_ddd.contexts.sys.application.audit.audit_application_service import (
-        OperationAuditService,
-    )
-
     operator_name = await _resolve_operator_name(event.account_id, event.account_type)
     if operator_name is None:
         operator_name = event.operator_name or event.account_id
@@ -84,7 +91,7 @@ async def _persist_audit_event(event: OperationAuditEvent) -> None:
         )
 
     async with get_session_factory()() as session:
-        await OperationAuditService(session).record(
+        await build_audit_service(session).record(
             module=_build_module(event.resource_type),
             resource_type=event.resource_type,
             action=event.action,

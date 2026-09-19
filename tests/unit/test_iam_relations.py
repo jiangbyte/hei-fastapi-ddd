@@ -2,6 +2,20 @@
 
 from sqlalchemy import select
 
+from hei_fastapi_ddd.contexts.iam.api.account_schemas import AccountRoleAssignRequest
+from hei_fastapi_ddd.contexts.iam.api.group_schemas import (
+    GroupCreateRequest,
+    GroupRoleAssignRequest,
+)
+from hei_fastapi_ddd.contexts.iam.api.resource_schemas import (
+    ResourceCreateRequest,
+    ResourcePermissionBindRequest,
+)
+from hei_fastapi_ddd.contexts.iam.api.role_schemas import (
+    RoleCreateRequest,
+    RoleGrantResourceRequest,
+    RoleResourceGrantInfo,
+)
 from hei_fastapi_ddd.contexts.iam.application.group.group_application_service import GroupService
 from hei_fastapi_ddd.contexts.iam.application.resource.resource_application_service import (
     ResourceService,
@@ -18,20 +32,6 @@ from hei_fastapi_ddd.contexts.iam.infrastructure.persistence.group_po import Sys
 from hei_fastapi_ddd.contexts.iam.infrastructure.persistence.relation_po import SysIamRelation
 from hei_fastapi_ddd.contexts.iam.infrastructure.persistence.resource_po import SysResource
 from hei_fastapi_ddd.contexts.iam.infrastructure.persistence.role_po import SysRole
-from hei_fastapi_ddd.contexts.iam.interfaces.http.account_schemas import AccountRoleAssignRequest
-from hei_fastapi_ddd.contexts.iam.interfaces.http.group_schemas import (
-    GroupCreateRequest,
-    GroupRoleAssignRequest,
-)
-from hei_fastapi_ddd.contexts.iam.interfaces.http.resource_schemas import (
-    ResourceCreateRequest,
-    ResourcePermissionBindRequest,
-)
-from hei_fastapi_ddd.contexts.iam.interfaces.http.role_schemas import (
-    RoleCreateRequest,
-    RoleGrantResourceRequest,
-    RoleResourceGrantInfo,
-)
 from hei_fastapi_ddd.shared.config.enums import (
     AccountStatusEnum,
     AccountType,

@@ -36,8 +36,8 @@ def auth_security_bypass(monkeypatch):
     async def fake_decrypt_password(password_key_id: str, value: str | None) -> str:
         return value or ""
 
-    monkeypatch.setattr("hei_fastapi_ddd.contexts.auth.interfaces.http.auth_router.verify_captcha", fake_verify_captcha)
-    monkeypatch.setattr("hei_fastapi_ddd.contexts.auth.interfaces.http.auth_router.decrypt_password", fake_decrypt_password)
+    monkeypatch.setattr("hei_fastapi_ddd.contexts.auth.trigger.http.auth_router.verify_captcha", fake_verify_captcha)
+    monkeypatch.setattr("hei_fastapi_ddd.contexts.auth.trigger.http.auth_router.decrypt_password", fake_decrypt_password)
     config_reader._cache["AUTH_PASSWORD_RESET_URL_ADMIN"] = _ADMIN_RESET_BASE
     config_reader._cache["AUTH_PASSWORD_RESET_URL_PORTAL"] = _PORTAL_RESET_BASE
 

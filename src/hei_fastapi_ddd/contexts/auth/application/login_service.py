@@ -8,31 +8,22 @@ from __future__ import annotations
 import secrets
 from uuid import uuid4
 
+from hei_fastapi_ddd.contexts.auth.application.dto import LoginPayload, LoginResult
 from hei_fastapi_ddd.contexts.auth.application.base import _audit_record, session_expires_in
 from hei_fastapi_ddd.contexts.auth.application.protection import login_protection_service
 from hei_fastapi_ddd.contexts.auth.domain.policy import (
     ensure_identity_allowed,
     no_user_policy_for,
 )
-from hei_fastapi_ddd.contexts.auth.interfaces.http.auth_schemas import (
-    LoginPayload,
-    LoginResponse,
-)
+
 from hei_fastapi_ddd.contexts.iam.application.account.password_helper import (
     get_password_age_days,
     is_password_expired,
 )
 from hei_fastapi_ddd.contexts.iam.domain.enums import AccountIdentityType
-from hei_fastapi_ddd.contexts.iam.infrastructure.persistence.account_po import SysAccount
-from hei_fastapi_ddd.contexts.iam.interfaces.http.account_schemas import (
-    AccountCreateRequest,
-)
-from hei_fastapi_ddd.contexts.profile.infrastructure.persistence.portal_repository import (
-    ProfileUserPortalRepository,
-)
-from hei_fastapi_ddd.contexts.profile.interfaces.http.portal_schemas import (
-    ProfileUserPortalUpsertPayload,
-)
+from collections.abc import Mapping
+from typing import Any
+
 from hei_fastapi_ddd.contexts.sys.application.audit.audit_application_service import (
     OperationAuditService,
 )
@@ -41,7 +32,6 @@ from hei_fastapi_ddd.shared.config.enums import AccountStatusEnum, AccountType
 from hei_fastapi_ddd.shared.config.reader import config_reader
 from hei_fastapi_ddd.shared.config.settings import settings
 from hei_fastapi_ddd.shared.email.sender import send_templated_mail
-from hei_fastapi_ddd.shared.exceptions.business import AuthenticationError, BusinessError
 from hei_fastapi_ddd.shared.observability.metrics import record_login_attempt
 from hei_fastapi_ddd.shared.persistence.transaction import transactional
 from hei_fastapi_ddd.shared.redis.keys import (
@@ -53,6 +43,7 @@ from hei_fastapi_ddd.shared.security.password import hash_password_async
 from hei_fastapi_ddd.shared.security.session import SessionPayload, session_store
 from hei_fastapi_ddd.shared.security.token import generate_token
 from hei_fastapi_ddd.shared.sms.sender import send_templated_sms
+from hei_fastapi_ddd.types.business import AuthenticationError, BusinessError
 
 
 class LoginMixin:
@@ -171,7 +162,7 @@ class LoginMixin:
             raise AuthenticationError("Invalid or expired OTP code")
         await redis.delete(key)
 
-    async def _maybe_auto_create(self, payload: LoginPayload) -> SysAccount | None:
+    async def _maybe_auto_create(self, payload: LoginPayload) -> Mapping[str, Any] | None:
         """当策略允许 AUTO_CREATE 时自动创建账户并返回，否则返回 None。"""
         policy = ensure_identity_allowed(
             payload.account_type,
@@ -189,25 +180,25 @@ class LoginMixin:
         account_name = f"u_{uuid4().hex[:10]}"
         default_password = (settings.auth.default_password or secrets.token_urlsafe(12)).strip()
         async with transactional(self.db):
-            account = await self.account_repo.create(
-                AccountCreateRequest(
-                    account=account_name,
-                    password=default_password,
-                    account_type=payload.account_type,
-                    account_status=AccountStatusEnum.ENABLED,
-                    email=email,
-                    phone=phone,
-                    email_login_enabled=bool(email),
-                    phone_login_enabled=bool(phone),
-                    email_identity_verified=bool(email),
-                    phone_identity_verified=bool(phone),
-                ),
+            account = await self.account_api.create_account(
+                {
+                    "account": account_name,
+                    "password": default_password,
+                    "account_type": payload.account_type,
+                    "account_status": AccountStatusEnum.ENABLED,
+                    "email": email,
+                    "phone": phone,
+                    "email_login_enabled": bool(email),
+                    "phone_login_enabled": bool(phone),
+                    "email_identity_verified": bool(email),
+                    "phone_identity_verified": bool(phone),
+                },
                 password_hash=await hash_password_async(default_password),
             )
             if payload.account_type == AccountType.PORTAL:
                 await ProfileUserPortalRepository(self.db).upsert(
                     ProfileUserPortalUpsertPayload(
-                        account_id=account.id,
+                        account_id=account["id"],
                         name=None,
                         nickname=account_name,
                         phone=phone,
@@ -218,7 +209,7 @@ class LoginMixin:
                         level=None,
                     ),
                 )
-            await self._assign_register_defaults(account.id, payload.account_type)
+            await self._assign_register_defaults(account["id"], payload.account_type)
         return account
 
     async def password_expiry_warning_days(self, account_id: str) -> int | None:
@@ -227,7 +218,7 @@ class LoginMixin:
         expire_days = settings.password_policy.expire_days
         if warning <= 0 or expire_days <= 0:
             return None
-        age = await get_password_age_days(self.db, account_id)
+        age = await get_password_age_days(self.password_port, account_id)
         if age is None:
             return None
         remaining = expire_days - age
@@ -235,9 +226,9 @@ class LoginMixin:
             return int(remaining)
         return None
 
-    async def _issue_session(self, account: SysAccount, payload: LoginPayload) -> SessionPayload:
+    async def _issue_session(self, account: Mapping[str, Any], payload: LoginPayload) -> SessionPayload:
         """组装会话载荷、写入会话存储并记录审计与指标。"""
-        password_expired_ = await is_password_expired(self.db, account.id)
+        password_expired_ = await is_password_expired(self.password_port, account["id"])
         session_payload = await self.session_service.build_session_payload(
             account,
             generate_token(),
@@ -265,36 +256,36 @@ class LoginMixin:
             client_ip=payload.client_ip,
         )
         record_login_attempt(payload.account_type.value, "success")
-        audit_snapshots.resource_id(account.id)
+        audit_snapshots.resource_id(account["id"])
         await OperationAuditService(self.db).record(
             **_audit_record(
                 module="auth",
                 action="login",
                 resource_type="auth",
-                resource_id=account.id,
+                resource_id=account["id"],
                 success=True,
-                account_id=account.id,
+                account_id=account["id"],
                 account_type=payload.account_type.value,
                 operator_name=payload.account,
                 ip=payload.client_ip,
                 user_agent=payload.user_agent,
             )
         )
-        await self._maybe_notify_password_expiring(account.id)
+        await self._maybe_notify_password_expiring(account["id"])
         return session_payload
 
     async def issue_oauth_session(
         self,
-        account: SysAccount,
+        account: Mapping[str, Any],
         account_type: AccountType,
         *,
         login_label: str | None = None,
         client_ip: str | None = None,
         user_agent: str | None = None,
         device_label: str | None = None,
-    ) -> LoginResponse:
+    ) -> LoginResult:
         """为 OAuth 登录签发会话并返回登录结果（含强制绑定标记）。"""
-        password_expired_ = await is_password_expired(self.db, account.id)
+        password_expired_ = await is_password_expired(self.password_port, account["id"])
         session_payload = await self.session_service.build_session_payload(
             account,
             generate_token(),
@@ -322,22 +313,22 @@ class LoginMixin:
             module="auth",
             action="oauth_wechat_mp_login",
             resource_type="auth",
-            resource_id=account.id,
+            resource_id=account["id"],
             success=True,
-            account_id=account.id,
-            account_type=account.account_type,
-            operator_name=login_label or account.id,
+            account_id=account["id"],
+            account_type=account["account_type"],
+            operator_name=login_label or account["id"],
             ip=client_ip,
             user_agent=user_agent,
         )
-        await self._maybe_notify_password_expiring(account.id)
-        return LoginResponse(
+        await self._maybe_notify_password_expiring(account["id"])
+        return LoginResult(
             token=session_payload.token,
-            account_id=account.id,
+            account_id=account["id"],
             account_type=account_type,
             password_expired=password_expired_,
             password_expiry_warning_days=await self.password_expiry_warning_days(
-                account.id
+                account["id"]
             ),
             expires_in=session_expires_in(session_payload),
             force_bind_email=session_payload.force_bind_email,
@@ -345,16 +336,16 @@ class LoginMixin:
         )
 
     async def _force_bind_flags(
-        self, account: SysAccount, account_type: AccountType
+        self, account: Mapping[str, Any], account_type: AccountType
     ) -> tuple[bool, bool]:
         """按 AUTH_FORCE_BIND_{TYPE}_{EMAIL|PHONE} 配置与账号已绑定身份计算强制绑定标记。"""
         type_name = account_type.value
         force_email = config_reader.get_bool(
             f"AUTH_FORCE_BIND_{type_name}_EMAIL", False
-        ) and not await self.account_repo.has_identity(account.id, AccountIdentityType.EMAIL)
+        ) and not await self.account_repo.has_identity(account["id"], AccountIdentityType.EMAIL)
         force_phone = config_reader.get_bool(
             f"AUTH_FORCE_BIND_{type_name}_PHONE", False
-        ) and not await self.account_repo.has_identity(account.id, AccountIdentityType.PHONE)
+        ) and not await self.account_repo.has_identity(account["id"], AccountIdentityType.PHONE)
         return bool(force_email), bool(force_phone)
 
     async def force_bind_identity_flag(
@@ -364,15 +355,11 @@ class LoginMixin:
         type_name = account_type.value
         if not config_reader.get_bool(f"AUTH_FORCE_BIND_{type_name}_IDENTITY", False):
             return False
-        from hei_fastapi_ddd.contexts.profile.application.identity.identity_application_service import (
-            ProfileIdentityService,
-        )
-
-        return not await ProfileIdentityService(self.db).is_verified(account_id)
+        return not await self.profile_read_port.is_identity_verified(account_id)
 
     async def refresh_session(
         self, token: str, account_type: AccountType
-    ) -> LoginResponse:
+    ) -> LoginResult:
         """刷新当前会话（滑动 TTL、重算授权）并返回最新登录结果，会话失效时抛错。"""
         session = await session_store.get(token)
         if session is None:
@@ -380,8 +367,8 @@ class LoginMixin:
         if str(session.account_type) != account_type.value:
             raise BusinessError("账号类型不匹配")
         account = await self.account_repo.get_required(session.account_id)
-        authorization = await self.relation_repo.get_account_authorization(account.id)
-        password_expired_ = await is_password_expired(self.db, account.id)
+        authorization = await self.relation_repo.get_account_authorization(account["id"])
+        password_expired_ = await is_password_expired(self.password_port, account["id"])
         session_payload = self.session_service._build_session_payload_from_authorization(
             account,
             token,
@@ -400,8 +387,8 @@ class LoginMixin:
         await session_store.set(
             session_payload, ttl_seconds=settings.auth.token_ttl_seconds
         )
-        await self._maybe_notify_password_expiring(account.id)
-        return LoginResponse(
+        await self._maybe_notify_password_expiring(account["id"])
+        return LoginResult(
             token=session_payload.token,
             account_id=session_payload.account_id,
             account_type=account_type,
@@ -426,23 +413,23 @@ class LoginMixin:
         phone_ident: str | None = None
         for item in await self.account_repo.list_identities_by_account_ids([account_id]):
             if (
-                item.identity_type == AccountIdentityType.ACCOUNT.value
-                and item.bind_status == "BOUND"
-                and item.identifier
+                item.get("identity_type") == AccountIdentityType.ACCOUNT.value
+                and item.get("bind_status") == "BOUND"
+                and item.get("identifier")
             ):
-                account_name = item.identifier
+                account_name = item.get("identifier")
             elif (
-                item.identity_type == AccountIdentityType.EMAIL.value
-                and item.bind_status == "BOUND"
-                and item.identifier
+                item.get("identity_type") == AccountIdentityType.EMAIL.value
+                and item.get("bind_status") == "BOUND"
+                and item.get("identifier")
             ):
-                email_ident = item.identifier
+                email_ident = item.get("identifier")
             elif (
-                item.identity_type == AccountIdentityType.PHONE.value
-                and item.bind_status == "BOUND"
-                and item.identifier
+                item.get("identity_type") == AccountIdentityType.PHONE.value
+                and item.get("bind_status") == "BOUND"
+                and item.get("identifier")
             ):
-                phone_ident = item.identifier
+                phone_ident = item.get("identifier")
         variables = {
             "app_name": settings.app.name,
             "account": account_name,

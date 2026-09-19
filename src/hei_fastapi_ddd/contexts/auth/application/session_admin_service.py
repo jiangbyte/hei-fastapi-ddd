@@ -9,24 +9,24 @@ from time import monotonic
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from hei_fastapi_ddd.contexts.auth.interfaces.http.session_schemas import (
+from hei_fastapi_ddd.contexts.auth.application.session_dto import (
     SessionAccountItem,
-    SessionAnalysisResponse,
+    SessionAnalysisResult,
     SessionPageQuery,
     SessionTokenInfo,
     SessionTokensQuery,
 )
-from hei_fastapi_ddd.contexts.iam.application.account.query_service import AccountQueryService
-from hei_fastapi_ddd.contexts.iam.application.api.account_api_adapter import (
-    AccountApiAdapter as AccountRepository,
+from hei_fastapi_ddd.contexts.auth.application.support.session_picker import (
+    build_account_picker_fields,
 )
+from hei_fastapi_ddd.contexts.iam.application.api.account_api import AccountApi
 from hei_fastapi_ddd.shared.audit import snapshots as audit_snapshots
 from hei_fastapi_ddd.shared.config.enums import AccountType
 from hei_fastapi_ddd.shared.security.session import SessionPayload, session_store
 from hei_fastapi_ddd.shared.web.pagination import PageData, build_page
 
 _ANALYSIS_CACHE_TTL_SECONDS = 30.0
-_analysis_cache: tuple[float, SessionAnalysisResponse] | None = None
+_analysis_cache: tuple[float, SessionAnalysisResult] | None = None
 
 
 def _mask_token(token: str | None) -> str:
@@ -42,12 +42,11 @@ def _mask_token(token: str | None) -> str:
 class SessionAdminService:
     """会话管理服务：在线会话分析、分页与强制下线。"""
 
-    def __init__(self, db: AsyncSession) -> None:
-        """初始化账户仓储。"""
+    def __init__(self, db: AsyncSession, *, account_api: AccountApi) -> None:
         self.db = db
-        self.account_repo = AccountRepository(db)
+        self.account_api = account_api
 
-    async def analysis(self) -> SessionAnalysisResponse:
+    async def analysis(self) -> SessionAnalysisResult:
         """统计在线账户、token 与近一小时新增等指标。"""
         global _analysis_cache
         now_mono = monotonic()
@@ -65,7 +64,7 @@ class SessionAdminService:
                 if login_at and login_at >= one_hour_ago:
                     one_hour_new_count += 1
         account_types = Counter(account_type for account_type, _ in grouped)
-        result = SessionAnalysisResponse(
+        result = SessionAnalysisResult(
             online_account_count=len(grouped),
             online_token_count=sum(token_counts),
             admin_account_count=account_types.get(AccountType.ADMIN.value, 0),
@@ -169,15 +168,12 @@ class SessionAdminService:
         if not grouped:
             return []
         account_ids = [account_id for _, account_id in grouped]
-        accounts = await self.account_repo.list_accounts_by_ids(account_ids)
-        schema_map = {
-            schema.id: schema
-            for schema in await AccountQueryService(self.db).build_account_picker_schemas(accounts)
-        }
-        account_map = {account.id: account for account in accounts}
+        accounts = await self.account_api.list_accounts_by_ids(account_ids)
+        picker_map = await build_account_picker_fields(self.account_api, accounts)
+        account_map = {str(account["id"]): account for account in accounts}
         items: list[SessionAccountItem] = []
         for (account_type, account_id), sessions in grouped.items():
-            schema = schema_map.get(account_id)
+            picker = picker_map.get(account_id, {})
             account = account_map.get(account_id)
             token_infos = [_token_info(session) for session in sessions]
             token_infos.sort(
@@ -193,10 +189,10 @@ class SessionAdminService:
                 SessionAccountItem(
                     account_id=account_id,
                     account_type=account_type,
-                    account=getattr(schema, "account", None) or "",
-                    name=getattr(schema, "name", None),
-                    latest_login_ip=getattr(account, "latest_login_ip", None),
-                    latest_login_time=getattr(account, "latest_login_time", None),
+                    account=str(picker.get("account") or ""),
+                    name=picker.get("name"),
+                    latest_login_ip=account.get("latest_login_ip") if account else None,
+                    latest_login_time=account.get("latest_login_time") if account else None,
                     client_ip=newest.client_ip if newest else None,
                     device_label=newest.device_label if newest else None,
                     token_count=len(token_infos),
